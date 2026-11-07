@@ -1,0 +1,13 @@
+{
+  "$schema": "https://www.flowlauncher.com/schemas/plugin.schema.json",
+  "ID": "54729F19F9EA4A119428538DA84733A5",
+  "ActionKeywords": ["cv"],
+  "Name": "Conversor de unidades",
+  "Description": "Convierte longitudes, pesos, temperaturas, volúmenes, áreas, velocidades, tiempos, datos y energía sin conexión: «cv 10 km a mi», «cv 100 f c», «cv 5 kg»",
+  "Author": "Max Anthony Mamani Maquera",
+  "Version": "0.1.0",
+  "Language": "JavaScript",
+  "Website": "https://github.com/1xmanMAX/Flow-Launcher-Android",
+  "IcoPath": "Images\\conversor.png",
+  "ExecuteFileName": "main.js"
+}

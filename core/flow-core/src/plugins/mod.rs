@@ -2,6 +2,8 @@
 //! consulta, preguntarles en paralelo y entender lo que contestan.
 
 pub mod ajustes;
+#[cfg(feature = "js")]
+pub mod js;
 pub mod manifiesto;
 pub mod proceso;
 
@@ -49,11 +51,19 @@ pub struct Plugin {
     /// Alguien esta arrancando el proceso (lanzarlo e `initialize`, hasta
     /// 5 s): los demas no se quedan esperando con el bloqueo tomado.
     arrancando: std::sync::atomic::AtomicBool,
+    /// El motor de JavaScript, si lo es.
+    #[cfg(feature = "js")]
+    js: Option<js::Js>,
 }
 
 impl Plugin {
     pub fn compatible(&self) -> bool {
-        self.exe.is_some() && !matches!(self.m.lenguaje, Lenguaje::Otro(_))
+        self.exe.is_some()
+            && match self.m.lenguaje {
+                Lenguaje::EjecutableV1 | Lenguaje::EjecutableV2 => true,
+                Lenguaje::JavaScript => cfg!(feature = "js"),
+                Lenguaje::Otro(_) => false,
+            }
     }
 
     pub fn estado(&self) -> String {
@@ -66,6 +76,10 @@ impl Plugin {
         if self.m.desactivado {
             return "Desactivado".into();
         }
+        #[cfg(feature = "js")]
+        if let Some(e) = self.js.as_ref().and_then(js::Js::error) {
+            return e;
+        }
         "Listo".into()
     }
 
@@ -73,7 +87,7 @@ impl Plugin {
         let m = &self.m;
         json!({
             "id": m.id, "name": m.nombre, "author": m.autor, "version": m.version,
-            "language": match &m.lenguaje { Lenguaje::EjecutableV1 => "Executable", Lenguaje::EjecutableV2 => "Executable_V2", Lenguaje::Otro(o) => o.as_str() },
+            "language": match &m.lenguaje { Lenguaje::EjecutableV1 => "Executable", Lenguaje::EjecutableV2 => "Executable_V2", Lenguaje::JavaScript => "JavaScript", Lenguaje::Otro(o) => o.as_str() },
             "description": m.descripcion, "website": m.web, "actionKeywords": m.palabras,
             "actionKeyword": m.palabras.first(),
             "pluginDirectory": m.dir, "pluginSettingsDirectoryPath": self.dir_ajustes,
@@ -129,14 +143,29 @@ impl Plugin {
 
     /// Calienta el proceso antes de la primera tecla.
     pub fn preparar(&self, eventos: &Eventos) {
-        if self.m.lenguaje == Lenguaje::EjecutableV2 && self.compatible() {
-            self.proceso(eventos, Duration::from_secs(5));
+        if !self.compatible() {
+            return;
+        }
+        match self.m.lenguaje {
+            Lenguaje::EjecutableV2 => {
+                self.proceso(eventos, Duration::from_secs(5));
+            }
+            #[cfg(feature = "js")]
+            Lenguaje::JavaScript => {
+                if let Some(js) = &self.js {
+                    js.preparar(&|| self.metadatos(), eventos);
+                }
+            }
+            _ => {}
         }
     }
 
-    /// `peticion_v1`: el JSON que Flow pasa como argumento en el modo v1
-    /// (`{"id", "method", "parameters", "settings"}`).
-    fn pedir(&self, metodo: &str, params_v2: Value, peticion_v1: Value, espera: Duration, eventos: &Eventos) -> Option<Value> {
+    /// Una peticion al plugin. Cada modo recibe los parametros a su manera:
+    /// v2 como los manda Flow; v1, el JSON que Flow pasa como argumento
+    /// (`{"id", "method", "parameters", "settings"}`); JavaScript, como los
+    /// argumentos de la funcion.
+    fn pedir(&self, metodo: &str, params_v2: Value, peticion_v1: Value, params_js: Value, espera: Duration, eventos: &Eventos) -> Option<Value> {
+        let _ = &params_js;
         let r = match self.m.lenguaje {
             Lenguaje::EjecutableV2 => self.proceso(eventos, espera)?.llamar(metodo, params_v2, espera),
             Lenguaje::EjecutableV1 => {
@@ -151,6 +180,10 @@ impl Plugin {
                 }
                 Some(r)
             }
+            #[cfg(feature = "js")]
+            Lenguaje::JavaScript => self.js.as_ref()?.llamar(metodo, &params_js, espera, &|| self.metadatos(), eventos),
+            #[cfg(not(feature = "js"))]
+            Lenguaje::JavaScript => None,
             Lenguaje::Otro(_) => None,
         }?;
         // Lo que Flow mira en cualquier respuesta: ajustes nuevos y un mensaje
@@ -179,7 +212,7 @@ impl Plugin {
             "isReQuery": false, "isHomeQuery": false,
         });
         let peticion_v1 = self.v1("query", json!([busqueda]));
-        let Some(r) = self.pedir("query", json!([q, self.ajustes.json()]), peticion_v1, espera, eventos) else {
+        let Some(r) = self.pedir("query", json!([q, self.ajustes.json()]), peticion_v1, json!([q]), espera, eventos) else {
             return Vec::new();
         };
         self.leer_resultados(&r, palabra == "*" || palabra.is_empty())
@@ -188,7 +221,7 @@ impl Plugin {
     pub fn menu(&self, contexto: &Value, espera: Duration, eventos: &Eventos) -> Vec<Resultado> {
         let mut v1 = self.v1("context_menu", json!([contexto]));
         v1["settings"] = Value::Null;
-        let r = self.pedir("context_menu", json!([contexto]), v1, espera, eventos);
+        let r = self.pedir("context_menu", json!([contexto]), v1, json!([contexto]), espera, eventos);
         r.map(|r| self.leer_resultados(&r, false)).unwrap_or_default()
     }
 
@@ -208,8 +241,9 @@ impl Plugin {
         if clave(&v1, "settings").is_none() {
             v1["settings"] = self.ajustes.json();
         }
-        let r = self.pedir(metodo, json!([parametros]), v1, espera, eventos);
-        let respuesta = r.as_ref().and_then(|r| clave(r, "hide")).and_then(Value::as_bool);
+        let r = self.pedir(metodo, json!([parametros]), v1, parametros.clone(), espera, eventos);
+        // `{"hide": false}`, o directamente `false` (JavaScript).
+        let respuesta = r.as_ref().and_then(|r| r.as_bool().or_else(|| clave(r, "hide").and_then(Value::as_bool)));
         match self.m.lenguaje {
             // V2: Flow solo mira `hide`, y por defecto cierra.
             Lenguaje::EjecutableV2 => respuesta.unwrap_or(true),
@@ -238,7 +272,7 @@ impl Plugin {
                     i if i.starts_with("http") || Path::new(&i).is_absolute() => i,
                     i => self.m.dir.join(i.replace('\\', "/")).to_string_lossy().to_string(),
                 };
-                let score = clave(x, "Score").and_then(Value::as_i64).unwrap_or(0).clamp(-100_000, 100_000) as i32;
+                let score = clave(x, "Score").and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))).unwrap_or(0).clamp(-100_000, 100_000) as i32;
                 let titulo = s("Title");
                 // Flow (C#) cuenta en UTF-16; aqui se cuenta por caracteres.
                 let resaltado = clave(x, "TitleHighlightData")
@@ -319,7 +353,19 @@ impl Host {
             ("FLOW_PROGRAM_DIRECTORY".to_string(), datos.clone()),
             ("FLOW_APPLICATION_DIRECTORY".to_string(), datos),
         ];
-        let p = Arc::new(Plugin { m, exe, dir_ajustes, ajustes, entorno, proceso: Mutex::new(None), arrancando: Default::default() });
+        #[cfg(feature = "js")]
+        let js = exe.clone().filter(|_| m.lenguaje == Lenguaje::JavaScript).map(|f| js::Js::nuevo(f, dir_ajustes.clone()));
+        let p = Arc::new(Plugin {
+            m,
+            exe,
+            dir_ajustes,
+            ajustes,
+            entorno,
+            proceso: Mutex::new(None),
+            arrancando: Default::default(),
+            #[cfg(feature = "js")]
+            js,
+        });
         let mut lista = self.plugins.write().map_err(|_| "bloqueo roto")?;
         if let Some(viejo) = lista.iter().position(|x| x.m.id == p.m.id) {
             lista.remove(viejo).cerrar();

@@ -12,7 +12,10 @@ pub enum Lenguaje {
     /// `Executable_V2`: un proceso que se queda vivo, JSON-RPC por
     /// stdin/stdout, un mensaje por linea.
     EjecutableV2,
-    /// Python, C#, JavaScript...: todavia no en Android.
+    /// `JavaScript` (o `JavaScript_V2`, o TypeScript ya compilado a `.js`):
+    /// corre dentro del nucleo, con QuickJS (ver [`super::js`]).
+    JavaScript,
+    /// Python, C#...: todavia no en Android.
     Otro(String),
 }
 
@@ -60,9 +63,14 @@ impl Manifiesto {
         palabras.retain(|p| !p.is_empty());
         palabras.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
 
+        let ejecutable = s("ExecuteFileName").replace('\\', "/");
+        let es_js = [".js", ".cjs", ".mjs"].iter().any(|x| ejecutable.to_ascii_lowercase().ends_with(x));
         let lenguaje = match s("Language").to_ascii_lowercase().as_str() {
             "executable" => Lenguaje::EjecutableV1,
             "executable_v2" | "executablev2" => Lenguaje::EjecutableV2,
+            "javascript" | "javascript_v2" => Lenguaje::JavaScript,
+            // TypeScript solo si ya viene compilado.
+            "typescript" | "typescript_v2" if es_js => Lenguaje::JavaScript,
             otro => Lenguaje::Otro(otro.to_string()),
         };
         let ico = s("IcoPath").replace('\\', "/");
@@ -76,7 +84,7 @@ impl Manifiesto {
             lenguaje,
             palabras,
             icono,
-            ejecutable: s("ExecuteFileName").replace('\\', "/"),
+            ejecutable,
             web: s("Website"),
             desactivado: clave(&v, "Disabled").and_then(Value::as_bool).unwrap_or(false),
             dir: dir.to_path_buf(),
@@ -96,6 +104,10 @@ impl Manifiesto {
         if self.ejecutable.is_empty() {
             return None;
         }
+        // Un script no se ejecuta: se lee de su carpeta.
+        if self.lenguaje == Lenguaje::JavaScript {
+            return Some(self.dir.join(&self.ejecutable)).filter(|p| p.is_file());
+        }
         let fichero = Path::new(&self.ejecutable).file_name()?.to_string_lossy().to_string();
         let base = fichero.strip_suffix(".exe").unwrap_or(&fichero);
         if let Some(libs) = dir_libs {
@@ -109,10 +121,13 @@ impl Manifiesto {
 
     pub fn explicacion_no_compatible(&self) -> Option<String> {
         match &self.lenguaje {
+            Lenguaje::JavaScript if !cfg!(feature = "js") => {
+                Some("Plugin de JavaScript: este núcleo se compiló sin el motor (opción «js»)".into())
+            }
             Lenguaje::Otro(l) => Some(match l.as_str() {
                 "python" => "Plugin de Python: aún no se pueden ejecutar en Android".into(),
                 "csharp" | "fsharp" => "Plugin de .NET (C#/F#): no se puede ejecutar en Android".into(),
-                "javascript" | "typescript" => "Plugin de JavaScript: llegará con el motor QuickJS".into(),
+                "typescript" | "typescript_v2" => "Plugin de TypeScript sin compilar: necesita su .js (ExecuteFileName)".into(),
                 "" => "plugin.json sin «Language»".into(),
                 otro => format!("Lenguaje «{otro}» no compatible"),
             }),
@@ -152,6 +167,21 @@ mod pruebas {
         .unwrap();
         assert!(m.es_global());
         assert!(m.explicacion_no_compatible().unwrap().contains("Python"));
+    }
+
+    #[test]
+    fn javascript_y_typescript_compilado() {
+        let leer = |l: &str, f: &str| {
+            let t = format!(r#"{{"ID":"J","Language":"{l}","ExecuteFileName":"{f}"}}"#);
+            Manifiesto::de_texto(&t, Path::new("/x")).unwrap()
+        };
+        assert_eq!(leer("JavaScript", "main.js").lenguaje, Lenguaje::JavaScript);
+        assert_eq!(leer("javascript_v2", "dist/main.js").lenguaje, Lenguaje::JavaScript);
+        assert_eq!(leer("TypeScript", "dist/main.js").lenguaje, Lenguaje::JavaScript);
+        let ts = leer("TypeScript", "main.ts");
+        assert_eq!(ts.lenguaje, Lenguaje::Otro("typescript".into()));
+        assert!(ts.explicacion_no_compatible().unwrap().contains("TypeScript"));
+        assert_eq!(leer("JavaScript", "main.js").explicacion_no_compatible().is_none(), cfg!(feature = "js"));
     }
 
     #[test]
