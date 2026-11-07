@@ -45,7 +45,8 @@ class Resultado(
 
         fun lista(a: JSONArray?): List<Resultado> {
             if (a == null) return emptyList()
-            return List(a.length()) { de(a.getJSONObject(it)) }
+            // Lo que no sea un objeto se salta en vez de fallar.
+            return (0 until a.length()).mapNotNull { n -> a.optJSONObject(n)?.let(::de) }
         }
     }
 }

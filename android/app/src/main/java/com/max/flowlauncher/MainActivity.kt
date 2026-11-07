@@ -43,7 +43,13 @@ class MainActivity : Activity() {
             val m = (20 * d).toInt()
             setPadding(m, m, m, m)
         }
-        setContentView(ScrollView(this).apply { addView(col) })
+        val raiz = ScrollView(this).apply {
+            addView(col)
+            clipToPadding = false
+        }
+        setContentView(raiz)
+        // Android 15 dibuja siempre bajo las barras: dejarles su sitio.
+        Bordes.vigilar(raiz, conTeclado = false)
 
         titulo(getString(R.string.app_name), 26f)
         texto(getString(R.string.intro))
@@ -54,7 +60,7 @@ class MainActivity : Activity() {
         burbuja = interruptor("Burbuja flotante", "Un círculo sobre las demás apps; tócalo para buscar.") { activa ->
             if (activa && !BurbujaService.puede(this)) {
                 Toast.makeText(this, "Permite «Mostrar sobre otras apps» y vuelve", Toast.LENGTH_LONG).show()
-                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                Acciones.abrir(this, Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
             }
             if (activa && Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -73,13 +79,13 @@ class MainActivity : Activity() {
 
         seccion("Qué buscar")
         contactos = interruptor("Contactos", "Buscar por nombre; mantener pulsado copia el número.") { activa ->
-            if (activa && Build.VERSION.SDK_INT >= 23 &&
+            if (activa &&
                 checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED
             ) {
                 requestPermissions(arrayOf(Manifest.permission.READ_CONTACTS), PEDIR_CONTACTOS)
             } else if (!activa) {
                 Toast.makeText(this, "Quita el permiso en la ficha de la app", Toast.LENGTH_LONG).show()
-                startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                Acciones.abrir(this, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
             }
         }
 
@@ -90,10 +96,15 @@ class MainActivity : Activity() {
                 "%APPDATA%\\FlowLauncher\\Settings\\Plugins\\Flow.Launcher.Plugin.WebSearch\\",
         )
         boton("Importar Settings.json de Flow") {
-            startActivityForResult(
-                Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),
-                IMPORTAR,
-            )
+            try {
+                startActivityForResult(
+                    Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*"),
+                    IMPORTAR,
+                )
+            } catch (e: RuntimeException) {
+                // Algunos moviles (TV, Go) no traen selector de ficheros.
+                Toast.makeText(this, "No hay ninguna app para elegir el fichero", Toast.LENGTH_SHORT).show()
+            }
         }
 
         seccion("Plugins")
@@ -105,12 +116,12 @@ class MainActivity : Activity() {
         burbuja.isChecked = BurbujaService.activa(this) && BurbujaService.puede(this)
         // Volver del permiso de superposicion: si se dio, arrancarla.
         if (BurbujaService.activa(this) && BurbujaService.puede(this)) BurbujaService.cambiar(this, true)
-        contactos.isChecked = Build.VERSION.SDK_INT < 23 ||
+        contactos.isChecked =
             checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         App.fondo.execute {
             App.listo.await(3, TimeUnit.SECONDS)
-            val e = JSONObject(Nucleo.estado())
-            App.principal.post { pintarPlugins(e) }
+            val e = runCatching { JSONObject(Nucleo.estado()) }.getOrElse { JSONObject() }
+            App.principal.post { if (!isDestroyed) pintarPlugins(e) }
         }
     }
 
@@ -119,7 +130,7 @@ class MainActivity : Activity() {
         val sb = StringBuilder()
         if (a == null || a.length() == 0) sb.append("Ninguno.")
         for (n in 0 until (a?.length() ?: 0)) {
-            val p = a!!.getJSONObject(n)
+            val p = a!!.optJSONObject(n) ?: continue
             val palabras = p.optJSONArray("palabras")?.let { k -> List(k.length()) { k.getString(it) } } ?: emptyList()
             sb.append(if (p.optBoolean("compatible")) "✅ " else "⚠️ ")
                 .append(p.optString("nombre")).append("  ·  ").append(palabras.joinToString(" "))
@@ -150,10 +161,11 @@ class MainActivity : Activity() {
                 contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
             }.getOrNull()
             val r = if (texto == null) JSONObject().put("error", "No se pudo leer el fichero")
-            else JSONObject(Nucleo.importarBusquedas(texto.trimStart('﻿')))
+            else runCatching { JSONObject(Nucleo.importarBusquedas(texto.trimStart('\uFEFF'))) }
+                .getOrElse { JSONObject().put("error", "No se pudo importar") }
             App.principal.post {
                 val msg = if (r.has("ok")) "Importadas ${r.optInt("ok")} búsquedas web" else r.optString("error")
-                Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -172,7 +184,7 @@ class MainActivity : Activity() {
         textSize = 13f
         isAllCaps = true
         letterSpacing = 0.08f
-        setTextColor(if (Build.VERSION.SDK_INT >= 23) getColor(R.color.acento) else resources.getColor(R.color.acento))
+        setTextColor(getColor(R.color.acento))
         setPadding(0, (24 * d).toInt(), 0, (6 * d).toInt())
         col.addView(this)
     }

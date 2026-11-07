@@ -8,10 +8,15 @@ import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import java.io.File
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.ThreadFactory
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 class App : Application() {
 
@@ -20,28 +25,66 @@ class App : Application() {
             private set
 
         /** Para lo que no puede ir en el hilo de la interfaz. */
-        val fondo: ExecutorService = Executors.newSingleThreadExecutor { r ->
-            Thread(r, "flow-fondo").apply { priority = Thread.NORM_PRIORITY - 1 }
-        }
+        val fondo: ExecutorService = hilos("flow-fondo", 1, Thread.NORM_PRIORITY - 1)
 
         val principal = Handler(Looper.getMainLooper())
 
         /** Se abre cuando el nucleo ya esta listo. */
         val listo = CountDownLatch(1)
+
+        /**
+         * Hilos que nunca tumban la app: un fallo en una tarea se apunta en
+         * el log y el hilo sigue; lo que llega tras cerrarlos se ignora.
+         */
+        fun hilos(nombre: String, n: Int = 1, prioridad: Int = Thread.NORM_PRIORITY): ExecutorService =
+            Seguro(nombre, n, prioridad)
+    }
+
+    private class Seguro(nombre: String, n: Int, prioridad: Int) : ThreadPoolExecutor(
+        n, n, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue(),
+        ThreadFactory { r ->
+            Thread(r, nombre).apply {
+                priority = prioridad
+                // Por si algo se escapa igualmente: nada de cerrar el proceso.
+                setUncaughtExceptionHandler { t, e -> Log.e("Flow", "Fallo en ${t.name}", e) }
+            }
+        },
+    ) {
+        override fun execute(r: Runnable) {
+            try {
+                super.execute {
+                    try {
+                        r.run()
+                    } catch (e: Throwable) {
+                        Log.e("Flow", "Fallo en segundo plano", e)
+                    }
+                }
+            } catch (e: RejectedExecutionException) {
+                // Ya cerrado (la ventana se fue): no hay a quien contestar.
+            }
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
         app = this
         fondo.execute {
-            val plugins = Plugins.instalarIncluidos(this)
-            Nucleo.iniciar(
-                File(filesDir, "datos").absolutePath,
-                applicationInfo.nativeLibraryDir,
-                plugins.absolutePath,
-            )
-            listo.countDown()
-            Fuentes.cargarTodo(this)
+            try {
+                // Disco lleno, assets rotos...: se sigue sin los plugins incluidos.
+                val plugins = runCatching { Plugins.instalarIncluidos(this) }
+                    .getOrElse { File(filesDir, "plugins") }
+                Nucleo.iniciar(
+                    File(filesDir, "datos").absolutePath,
+                    applicationInfo.nativeLibraryDir,
+                    plugins.absolutePath,
+                )
+            } catch (e: Throwable) {
+                Log.e("Flow", "No se pudo iniciar el nucleo", e)
+            } finally {
+                // Pase lo que pase, nadie se queda esperando.
+                listo.countDown()
+            }
+            runCatching { Fuentes.cargarTodo(this) }.onFailure { Log.e("Flow", "Fuentes", it) }
         }
         // Apps instaladas o quitadas: releerlas.
         val filtro = IntentFilter().apply {
@@ -55,10 +98,12 @@ class App : Application() {
                 fondo.execute { Fuentes.cargarApps(c) }
             }
         }
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(receptor, filtro, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            registerReceiver(receptor, filtro)
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(receptor, filtro, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(receptor, filtro)
+            }
         }
     }
 }

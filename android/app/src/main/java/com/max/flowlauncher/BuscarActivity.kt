@@ -4,7 +4,6 @@ import android.app.Activity
 import android.content.Intent
 import android.graphics.Typeface
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.text.Editable
@@ -28,7 +27,6 @@ import android.widget.ProgressBar
 import android.widget.TextView
 import org.json.JSONArray
 import org.json.JSONObject
-import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -50,12 +48,20 @@ class BuscarActivity : Activity() {
     private var turno = 0
     private var locales: List<Resultado> = emptyList()
 
-    private val hiloPlugins = Executors.newSingleThreadExecutor { r -> Thread(r, "flow-plugins") }
+    /** Tras cerrarse, lo que se le mande se ignora (nada de RejectedExecutionException). */
+    private val hiloPlugins = App.hilos("flow-plugins")
+
+    /** Lo que llega tarde (plugins, el nucleo al arrancar) no toca una ventana ya cerrada. */
+    private val cerrada get() = isDestroyed || isFinishing
 
     override fun onCreate(estado: Bundle?) {
         super.onCreate(estado)
         setContentView(R.layout.buscar)
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        // adjustResize no sirve de borde a borde (Android 15): el teclado se
+        // resta como relleno y el panel, con la lista, cabe en lo que queda.
+        Bordes.deBordeABorde(window)
+        Bordes.vigilar(findViewById(R.id.fondo), conTeclado = true)
         consulta = findViewById(R.id.consulta)
         lista = findViewById(R.id.lista)
         cargando = findViewById(R.id.cargando)
@@ -76,16 +82,16 @@ class BuscarActivity : Activity() {
             if (enter) adaptador.items.firstOrNull()?.let { elegir(it) }
             enter
         }
-        lista.setOnItemClickListener { _, _, pos, _ -> elegir(adaptador.items[pos]) }
+        lista.setOnItemClickListener { _, _, pos, _ -> adaptador.items.getOrNull(pos)?.let { elegir(it) } }
         lista.setOnItemLongClickListener { _, _, pos, _ ->
-            pulsacionLarga(adaptador.items[pos])
+            adaptador.items.getOrNull(pos)?.let { pulsacionLarga(it) }
             true
         }
 
         // El nucleo arranca con el proceso; casi siempre ya esta listo.
         if (App.listo.count > 0L) {
             Thread {
-                App.listo.await(3, TimeUnit.SECONDS)
+                runCatching { App.listo.await(3, TimeUnit.SECONDS) }
                 App.principal.post { recibirIntent(intent) }
             }.start()
         } else {
@@ -102,7 +108,11 @@ class BuscarActivity : Activity() {
     override fun onResume() {
         super.onResume()
         consulta.requestFocus()
-        window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE)
+        // Sin perder adjustResize (lo que aun usa Android 7–10).
+        window.setSoftInputMode(
+            WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE or
+                WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE,
+        )
         consulta.post {
             getSystemService(InputMethodManager::class.java)?.showSoftInput(consulta, InputMethodManager.SHOW_IMPLICIT)
         }
@@ -125,15 +135,21 @@ class BuscarActivity : Activity() {
     }
 
     private fun recibirIntent(i: Intent?) {
-        val texto = when (i?.action) {
-            Intent.ACTION_PROCESS_TEXT -> i.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
-            Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT)
-            else -> i?.getStringExtra("consulta")
-        } ?: ""
-        cambiarConsulta(texto.trim())
+        if (cerrada) return
+        // Los extras de otra app pueden venir rotos (BadParcelableException...).
+        val texto = runCatching {
+            when (i?.action) {
+                Intent.ACTION_PROCESS_TEXT -> i.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+                Intent.ACTION_SEND -> i.getStringExtra(Intent.EXTRA_TEXT)
+                else -> i?.getStringExtra("consulta")
+            }
+        }.getOrNull() ?: ""
+        // Un texto enorme compartido no es una busqueda: solo el principio.
+        cambiarConsulta(texto.trim().take(MAX_TEXTO))
     }
 
     private fun cambiarConsulta(t: String) {
+        if (cerrada) return
         consulta.setText(t)
         consulta.setSelection(t.length)
         // setText ya llama a buscar() por el TextWatcher.
@@ -141,8 +157,10 @@ class BuscarActivity : Activity() {
     }
 
     private fun buscar(q: String) {
+        if (cerrada) return
         val mio = ++turno
-        val r = JSONObject(Nucleo.consultar(q, 20))
+        // Si el nucleo falla (no cargo, JSON raro), sin resultados pero sin cerrarse.
+        val r = runCatching { JSONObject(Nucleo.consultar(q, 20)) }.getOrElse { JSONObject() }
         locales = Resultado.lista(r.optJSONArray("r"))
         mostrar(locales)
         if (!r.optBoolean("p")) {
@@ -153,10 +171,11 @@ class BuscarActivity : Activity() {
         hiloPlugins.execute {
             // Si ya se escribio otra tecla, esta consulta no le importa a nadie.
             if (mio != turno) return@execute
-            val de = Resultado.lista(JSONArray(Nucleo.consultarPlugins(q, 20, 1500)))
-            val ev = JSONArray(Nucleo.eventos())
+            val de = runCatching { Resultado.lista(JSONArray(Nucleo.consultarPlugins(q, 20, 1500))) }
+                .getOrElse { emptyList() }
+            val ev = runCatching { JSONArray(Nucleo.eventos()) }.getOrElse { JSONArray() }
             App.principal.post {
-                if (mio != turno) return@post
+                if (cerrada || mio != turno) return@post
                 cargando.visibility = View.INVISIBLE
                 if (ev.length() > 0 && Acciones.eventos(this, ev, ::cambiarConsulta)) finish()
                 mostrar((locales + de).sortedByDescending { it.puntos }.take(30))
@@ -184,8 +203,9 @@ class BuscarActivity : Activity() {
             }
             cargando.visibility = View.VISIBLE
             hiloPlugins.execute {
-                val res = JSONObject(Nucleo.ejecutar(id, accion))
+                val res = runCatching { JSONObject(Nucleo.ejecutar(id, accion)) }.getOrElse { JSONObject() }
                 App.principal.post {
+                    if (cerrada) return@post
                     cargando.visibility = View.INVISIBLE
                     val pideCerrar = Acciones.eventos(this, res.optJSONArray("eventos"), ::cambiarConsulta)
                     if (res.optBoolean("cerrar", true) || pideCerrar) finish()
@@ -204,8 +224,9 @@ class BuscarActivity : Activity() {
             cargando.visibility = View.VISIBLE
             val mio = ++turno
             hiloPlugins.execute {
-                val menu = Resultado.lista(JSONArray(Nucleo.menu(id, cx)))
+                val menu = runCatching { Resultado.lista(JSONArray(Nucleo.menu(id, cx))) }.getOrElse { emptyList() }
                 App.principal.post {
+                    if (cerrada) return@post
                     cargando.visibility = View.INVISIBLE
                     if (mio == turno && menu.isNotEmpty()) mostrar(menu)
                 }
@@ -228,7 +249,7 @@ class BuscarActivity : Activity() {
         var items: List<Resultado> = emptyList()
         var consultaActual = ""
         private val acento by lazy {
-            if (Build.VERSION.SDK_INT >= 23) getColor(R.color.acento) else resources.getColor(R.color.acento)
+            getColor(R.color.acento)
         }
 
         override fun getCount() = items.size
@@ -262,6 +283,11 @@ class BuscarActivity : Activity() {
             }
             return s
         }
+    }
+
+    private companion object {
+        /** Lo mas largo que se acepta de otra app como consulta. */
+        const val MAX_TEXTO = 500
     }
 
     private class Fila(val icono: ImageView, val titulo: TextView, val subtitulo: TextView)

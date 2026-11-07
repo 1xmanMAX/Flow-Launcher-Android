@@ -15,7 +15,11 @@ import org.json.JSONArray
 /** Hacer lo que dice un resultado (ver `accion` en `resultado.rs`). */
 object Acciones {
 
+    /** Lo que de verdad hace la linterna (la puede tocar otra app o el sistema). */
+    @Volatile
     private var linterna = false
+    private var idLinterna: String? = null
+    private var vigia: CameraManager.TorchCallback? = null
 
     /**
      * Devuelve si hay que cerrar el buscador. Las de plugin no pasan por
@@ -25,7 +29,9 @@ object Acciones {
         val (tipo, resto) = accion.split(':', limit = 2).let { it[0] to it.getOrElse(1) { "" } }
         return when (tipo) {
             "app" -> {
-                val (paquete, actividad) = resto.split('/', limit = 2)
+                val partes = resto.split('/', limit = 2)
+                if (partes.size < 2) return false
+                val (paquete, actividad) = partes
                 abrir(
                     c,
                     Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
@@ -66,7 +72,8 @@ object Acciones {
 
     fun copiar(c: Context, texto: String) {
         val cm = c.getSystemService(ClipboardManager::class.java) ?: return
-        cm.setPrimaryClip(ClipData.newPlainText("Flow", texto))
+        // Un texto enorme no cabe por Binder (TransactionTooLargeException).
+        if (runCatching { cm.setPrimaryClip(ClipData.newPlainText("Flow", texto)) }.isFailure) return
         // Android 13+ ya ensena su propio aviso al copiar.
         if (android.os.Build.VERSION.SDK_INT < 33) {
             Toast.makeText(c, "Copiado: ${texto.take(60)}", Toast.LENGTH_SHORT).show()
@@ -75,12 +82,32 @@ object Acciones {
 
     private fun interno(c: Context, que: String): Boolean {
         if (que == "linterna") {
-            val cm = c.getSystemService(CameraManager::class.java) ?: return true
-            val id = cm.cameraIdList.firstOrNull {
-                cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
-            } ?: return true
-            linterna = !linterna
-            runCatching { cm.setTorchMode(id, linterna) }
+            // CameraAccessException no es RuntimeException: todo dentro.
+            runCatching {
+                val cm = c.applicationContext.getSystemService(CameraManager::class.java) ?: return true
+                val id = idLinterna ?: cm.cameraIdList.firstOrNull {
+                    cm.getCameraCharacteristics(it).get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+                }?.also { idLinterna = it } ?: return true
+                if (vigia == null) {
+                    // Una sola vez: avisa de cada cambio (tambien los de fuera).
+                    val v = object : CameraManager.TorchCallback() {
+                        override fun onTorchModeChanged(camara: String, encendida: Boolean) {
+                            if (camara == idLinterna) linterna = encendida
+                        }
+
+                        override fun onTorchModeUnavailable(camara: String) {
+                            if (camara == idLinterna) linterna = false
+                        }
+                    }
+                    cm.registerTorchCallback(v, App.principal)
+                    vigia = v
+                }
+                val nueva = !linterna
+                cm.setTorchMode(id, nueva)
+                linterna = nueva
+            }.onFailure {
+                Toast.makeText(c, "No se pudo usar la linterna", Toast.LENGTH_SHORT).show()
+            }
         }
         return true
     }

@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
-import android.os.Build
 import android.provider.ContactsContract
 import android.provider.Settings
 
@@ -45,8 +44,7 @@ object Fuentes {
     }
 
     fun cargarContactos(c: Context) {
-        if (Build.VERSION.SDK_INT >= 23 &&
-            c.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED
+        if (c.checkSelfPermission(Manifest.permission.READ_CONTACTS) != PackageManager.PERMISSION_GRANTED
         ) {
             return
         }
