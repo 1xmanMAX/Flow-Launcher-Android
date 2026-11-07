@@ -26,6 +26,44 @@ pub fn evento(metodo: &str, params: Value) -> Value {
     json!({ "metodo": m, "params": params })
 }
 
+/// El nombre de un metodo de la API de Flow, sin prefijo ni `Async`.
+fn base(metodo: &str) -> &str {
+    let m = metodo.strip_prefix("Flow.Launcher.").unwrap_or(metodo);
+    m.strip_suffix("Async").unwrap_or(m)
+}
+
+/// Lo que se le pasa a la app (lo que cambia algo que se ve).
+fn es_evento(metodo: &str) -> bool {
+    matches!(
+        base(metodo),
+        "ChangeQuery" | "CopyToClipboard" | "ShowMsg" | "ShowMsgError" | "OpenUrl" | "OpenWebUrl" | "OpenUri"
+            | "OpenAppUri" | "OpenDirectory" | "HideMainWindow" | "ShowMainWindow" | "BackToQueryResults"
+            | "StartLoadingBar" | "StopLoadingBar" | "UpdateResults"
+    )
+}
+
+/// La respuesta a lo que el plugin le pide a Flow (`JsonRPCPublicAPI` de
+/// Flow). Lo que no se conoce, error -32601 como hace Flow.
+pub fn responder_api(metodo: &str, params: &Value) -> Result<Value, String> {
+    let primero = || match params {
+        Value::Array(a) => a.first().cloned().unwrap_or(Value::Null),
+        otro => otro.clone(),
+    };
+    match base(metodo) {
+        m if es_evento(m) => Ok(Value::Null),
+        "IsMainWindowVisible" => Ok(json!(true)),
+        "ActionKeywordAssigned" => Ok(json!(false)),
+        "OpenPluginSettingsWindow" => Ok(json!(false)),
+        // Sin traducciones: la clave misma.
+        "GetTranslation" => Ok(primero()),
+        "LogDebug" | "LogInfo" | "LogWarn" | "LogError" | "LogException" | "SavePluginSettings"
+        | "SavePluginCaches" | "SaveAppAllSettings" | "ReloadAllPluginData" | "AddActionKeyword"
+        | "RemoveActionKeyword" | "CheckForNewUpdate" => Ok(Value::Null),
+        "GetAllPlugins" => Ok(json!([])),
+        otro => Err(format!("metodo no disponible en Android: {otro}")),
+    }
+}
+
 pub struct ProcesoV2 {
     entrada: Mutex<ChildStdin>,
     hijo: Mutex<Child>,
@@ -35,9 +73,10 @@ pub struct ProcesoV2 {
 }
 
 impl ProcesoV2 {
-    pub fn lanzar(exe: &Path, dir: &Path, eventos: Eventos) -> std::io::Result<Arc<ProcesoV2>> {
+    pub fn lanzar(exe: &Path, dir: &Path, entorno: &[(String, String)], eventos: Eventos) -> std::io::Result<Arc<ProcesoV2>> {
         let mut hijo = Command::new(exe)
             .current_dir(dir)
+            .envs(entorno.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -65,14 +104,20 @@ impl ProcesoV2 {
                     let Ok(msg) = serde_json::from_str::<Value>(linea.trim()) else { continue };
                     if let Some(metodo) = msg.get("method").and_then(Value::as_str) {
                         let params = msg.get("params").cloned().unwrap_or(Value::Null);
-                        if let Ok(mut e) = eventos.lock() {
-                            if e.len() < 100 {
-                                e.push(evento(metodo, params));
+                        let respuesta = responder_api(metodo, &params);
+                        if respuesta.is_ok() && es_evento(metodo) {
+                            if let Ok(mut e) = eventos.lock() {
+                                if e.len() < 100 {
+                                    e.push(evento(metodo, params));
+                                }
                             }
                         }
                         // Una peticion con id espera respuesta: se le da ya.
                         if let (Some(id), Some(p)) = (msg.get("id").filter(|i| !i.is_null()), debil.upgrade()) {
-                            p.escribir(&json!({ "jsonrpc": "2.0", "id": id, "result": null }));
+                            p.escribir(&match respuesta {
+                                Ok(r) => json!({ "jsonrpc": "2.0", "id": id, "result": r }),
+                                Err(m) => json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": m } }),
+                            });
                         }
                     } else if let Some(id) = msg.get("id").and_then(Value::as_u64) {
                         if let Some(tx) = pendientes.lock().ok().and_then(|mut m| m.remove(&id)) {
@@ -145,7 +190,8 @@ impl ProcesoV2 {
     }
 
     pub fn cerrar(&self) {
-        self.notificar("close", json!([]));
+        // Flow lo manda como peticion y espera un poco a que conteste.
+        self.llamar("close", json!([]), Duration::from_millis(300));
         if let Ok(mut h) = self.hijo.lock() {
             // Un respiro para que cierre solo; si no, a la fuerza.
             for _ in 0..10 {
@@ -171,10 +217,11 @@ impl Drop for ProcesoV2 {
 
 /// El modo v1: `programa '<json>'`, y lo que escriba por stdout es la
 /// respuesta. Se mata si tarda mas de `espera`.
-pub fn una_vez(exe: &Path, dir: &Path, peticion: &Value, espera: Duration) -> Option<Value> {
+pub fn una_vez(exe: &Path, dir: &Path, entorno: &[(String, String)], peticion: &Value, espera: Duration) -> Option<Value> {
     let mut hijo = Command::new(exe)
         .arg(peticion.to_string())
         .current_dir(dir)
+        .envs(entorno.iter().map(|(k, v)| (k, v)))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

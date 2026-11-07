@@ -1,6 +1,7 @@
 //! Los plugins de Flow Launcher: cargarlos, decidir a cuales va cada
 //! consulta, preguntarles en paralelo y entender lo que contestan.
 
+pub mod ajustes;
 pub mod manifiesto;
 pub mod proceso;
 
@@ -12,6 +13,10 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
+/// La version de Flow que se anuncia a los plugins (`FLOW_VERSION`): la de
+/// la API que se imita.
+pub const FLOW_VERSION: &str = "2.0.0";
+
 /// Una clave de un objeto JSON sin importar mayusculas (`Title`, `title`).
 pub fn clave<'a>(v: &'a Value, k: &str) -> Option<&'a Value> {
     let o = v.as_object()?;
@@ -22,6 +27,9 @@ pub struct Plugin {
     pub m: Manifiesto,
     pub exe: Option<PathBuf>,
     dir_ajustes: PathBuf,
+    ajustes: ajustes::Ajustes,
+    /// Variables de entorno que Flow les pone (`FLOW_VERSION`...).
+    entorno: Vec<(String, String)>,
     proceso: Mutex<Option<Arc<ProcesoV2>>>,
 }
 
@@ -51,7 +59,10 @@ impl Plugin {
             "description": m.descripcion, "website": m.web, "actionKeywords": m.palabras,
             "actionKeyword": m.palabras.first(),
             "pluginDirectory": m.dir, "pluginSettingsDirectoryPath": self.dir_ajustes,
-            "executeFilePath": self.exe, "icoPath": m.icono,
+            "executeFilePath": self.exe, "executeFileName": m.ejecutable, "icoPath": m.icono,
+            "disabled": m.desactivado, "homeDisabled": false, "hideActionKeywordPanel": false,
+            "searchDelayTime": Value::Null, "minimumAppVersion": "",
+            "pluginCacheDirectoryPath": self.dir_ajustes.join("Cache"),
         })
     }
 
@@ -62,7 +73,7 @@ impl Plugin {
             return Some(vivo.clone());
         }
         let _ = std::fs::create_dir_all(&self.dir_ajustes);
-        let nuevo = ProcesoV2::lanzar(self.exe.as_ref()?, &self.m.dir, eventos.clone()).ok()?;
+        let nuevo = ProcesoV2::lanzar(self.exe.as_ref()?, &self.m.dir, &self.entorno, eventos.clone()).ok()?;
         nuevo.llamar(
             "initialize",
             json!([{ "currentPluginMetadata": self.metadatos(), "api": {} }]),
@@ -79,11 +90,13 @@ impl Plugin {
         }
     }
 
-    fn pedir(&self, metodo: &str, params_v2: Value, params_v1: Value, espera: Duration, eventos: &Eventos) -> Option<Value> {
-        match self.m.lenguaje {
+    /// `peticion_v1`: el JSON que Flow pasa como argumento en el modo v1
+    /// (`{"id", "method", "parameters", "settings"}`).
+    fn pedir(&self, metodo: &str, params_v2: Value, peticion_v1: Value, espera: Duration, eventos: &Eventos) -> Option<Value> {
+        let r = match self.m.lenguaje {
             Lenguaje::EjecutableV2 => self.proceso(eventos)?.llamar(metodo, params_v2, espera),
             Lenguaje::EjecutableV1 => {
-                let r = proceso::una_vez(self.exe.as_ref()?, &self.m.dir, &json!({ "method": metodo, "parameters": params_v1 }), espera)?;
+                let r = proceso::una_vez(self.exe.as_ref()?, &self.m.dir, &self.entorno, &peticion_v1, espera)?;
                 // En v1 lo que el plugin le pide a Flow viene como respuesta:
                 // `{"method": "Flow.Launcher.ChangeQuery", "parameters": [...]}`.
                 if let Some(m) = clave(&r, "method").and_then(Value::as_str) {
@@ -95,22 +108,43 @@ impl Plugin {
                 Some(r)
             }
             Lenguaje::Otro(_) => None,
+        }?;
+        // Lo que Flow mira en cualquier respuesta: ajustes nuevos y un mensaje
+        // de depuracion para ensenar.
+        if let Some(c) = clave(&r, "settingsChange") {
+            self.ajustes.cambiar(c);
         }
+        if let Some(d) = clave(&r, "debugMessage").and_then(Value::as_str).filter(|d| !d.is_empty()) {
+            if let Ok(mut e) = eventos.lock() {
+                e.push(proceso::evento("ShowMsg", json!([self.m.nombre, d, ""])));
+            }
+        }
+        Some(r)
+    }
+
+    fn v1(&self, metodo: &str, parametros: Value) -> Value {
+        json!({ "id": 1, "method": metodo, "parameters": parametros, "settings": self.ajustes.json() })
     }
 
     pub fn consultar(&self, crudo: &str, palabra: &str, busqueda: &str, espera: Duration, eventos: &Eventos) -> Vec<Resultado> {
+        let recortada = crudo.trim();
         let q = json!({
-            "rawQuery": crudo, "search": busqueda, "actionKeyword": palabra,
-            "searchTerms": busqueda.split_whitespace().collect::<Vec<_>>(), "isReQuery": false,
+            "originalQuery": crudo, "rawQuery": recortada, "trimmedQuery": recortada,
+            "search": busqueda, "actionKeyword": palabra,
+            "searchTerms": busqueda.split_whitespace().collect::<Vec<_>>(),
+            "isReQuery": false, "isHomeQuery": false,
         });
-        let Some(r) = self.pedir("query", json!([q, {}]), json!([busqueda]), espera, eventos) else {
+        let peticion_v1 = self.v1("query", json!([busqueda]));
+        let Some(r) = self.pedir("query", json!([q, self.ajustes.json()]), peticion_v1, espera, eventos) else {
             return Vec::new();
         };
         self.leer_resultados(&r, palabra == "*" || palabra.is_empty())
     }
 
     pub fn menu(&self, contexto: &Value, espera: Duration, eventos: &Eventos) -> Vec<Resultado> {
-        let r = self.pedir("context_menu", json!([contexto]), json!([contexto]), espera, eventos);
+        let mut v1 = self.v1("context_menu", json!([contexto]));
+        v1["settings"] = Value::Null;
+        let r = self.pedir("context_menu", json!([contexto]), v1, espera, eventos);
         r.map(|r| self.leer_resultados(&r, false)).unwrap_or_default()
     }
 
@@ -125,9 +159,18 @@ impl Plugin {
             }
             return true;
         }
-        let r = self.pedir(metodo, json!([parametros]), parametros.clone(), espera, eventos);
-        let por_defecto = !clave(accion, "dontHideAfterAction").and_then(Value::as_bool).unwrap_or(false);
-        r.as_ref().and_then(|r| clave(r, "hide")).and_then(Value::as_bool).unwrap_or(por_defecto)
+        // En v1 Flow manda la accion tal cual (con sus `settings`).
+        let mut v1 = accion.clone();
+        if clave(&v1, "settings").is_none() {
+            v1["settings"] = self.ajustes.json();
+        }
+        let r = self.pedir(metodo, json!([parametros]), v1, espera, eventos);
+        let respuesta = r.as_ref().and_then(|r| clave(r, "hide")).and_then(Value::as_bool);
+        match self.m.lenguaje {
+            // V2: Flow solo mira `hide`, y por defecto cierra.
+            Lenguaje::EjecutableV2 => respuesta.unwrap_or(true),
+            _ => respuesta.unwrap_or(!clave(accion, "dontHideAfterAction").and_then(Value::as_bool).unwrap_or(false)),
+        }
     }
 
     /// `{"result": [...]}` o directamente la lista; claves en camelCase o
@@ -220,8 +263,17 @@ impl Host {
     pub fn cargar(&self, dir: &Path) -> Result<(), String> {
         let m = Manifiesto::leer(dir)?;
         let exe = m.ruta_ejecutable(self.dir_libs.as_deref());
-        let dir_ajustes = self.dir_ajustes.join(&m.id);
-        let p = Arc::new(Plugin { m, exe, dir_ajustes, proceso: Mutex::new(None) });
+        // Como Flow: la carpeta de ajustes lleva el nombre del plugin.
+        let nombre: String = m.nombre.chars().filter(|c| c.is_alphanumeric() || " -_.".contains(*c)).collect();
+        let dir_ajustes = self.dir_ajustes.join(if nombre.trim().is_empty() { m.id.as_str() } else { nombre.trim() });
+        let ajustes = ajustes::Ajustes::cargar(&m.dir, &dir_ajustes);
+        let datos = self.dir_ajustes.parent().unwrap_or(&self.dir_ajustes).to_string_lossy().to_string();
+        let entorno = vec![
+            ("FLOW_VERSION".to_string(), FLOW_VERSION.to_string()),
+            ("FLOW_PROGRAM_DIRECTORY".to_string(), datos.clone()),
+            ("FLOW_APPLICATION_DIRECTORY".to_string(), datos),
+        ];
+        let p = Arc::new(Plugin { m, exe, dir_ajustes, ajustes, entorno, proceso: Mutex::new(None) });
         let mut lista = self.plugins.write().map_err(|_| "bloqueo roto")?;
         if let Some(viejo) = lista.iter().position(|x| x.m.id == p.m.id) {
             lista.remove(viejo).cerrar();
