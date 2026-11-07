@@ -1,0 +1,14 @@
+[package]
+name = "flow-core"
+description = "Nucleo del buscador: indice, busqueda difusa y host de plugins de Flow Launcher"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lib]
+name = "flowcore"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde_json = "1"
+jni = { version = "0.21", default-features = false }

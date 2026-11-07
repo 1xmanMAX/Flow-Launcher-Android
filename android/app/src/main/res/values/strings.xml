@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Flow Buscador</string>
+    <string name="buscar">Buscar</string>
+    <string name="buscar_con">Buscar con Flow</string>
+    <string name="pista">Apps, contactos, ajustes, web, plugins…</string>
+    <string name="canal_burbuja">Burbuja flotante</string>
+    <string name="burbuja_activa">Burbuja de búsqueda activa</string>
+    <string name="toca_para_buscar">Toca para buscar</string>
+    <string name="abrir_buscador">Abrir el buscador</string>
+    <string name="intro">Buscador universal al estilo Flow Launcher: apps, contactos, ajustes, calculadora, búsquedas web y plugins compatibles con el protocolo de Flow.</string>
+</resources>

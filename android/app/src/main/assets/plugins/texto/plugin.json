@@ -1,0 +1,13 @@
+{
+  "$schema": "https://www.flowlauncher.com/schemas/plugin.schema.json",
+  "ID": "5B1F3C1E2A7D4E7C9A2B6D0F8E4C3A21",
+  "ActionKeywords": ["tx"],
+  "Name": "Texto",
+  "Description": "Transforma texto: MAYÚSCULAS, minúsculas, Título, al revés, Base64 y cuenta",
+  "Author": "Max Anthony Mamani Maquera",
+  "Version": "0.1.0",
+  "Language": "Executable_V2",
+  "Website": "https://github.com/1xmanMAX/Flow-Launcher-Android",
+  "IcoPath": "Images\\texto.png",
+  "ExecuteFileName": "flow-texto"
+}

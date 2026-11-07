@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="buscar"
+        android:enabled="true"
+        android:icon="@drawable/ic_launcher_legacy"
+        android:shortcutShortLabel="@string/buscar">
+        <intent
+            android:action="com.max.flowlauncher.BUSCAR"
+            android:targetPackage="com.max.flowlauncher"
+            android:targetClass="com.max.flowlauncher.BuscarActivity" />
+    </shortcut>
+</shortcuts>

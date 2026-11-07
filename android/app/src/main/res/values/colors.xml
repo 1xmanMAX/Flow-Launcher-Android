@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="acento">#2F6FEB</color>
+    <color name="panel">#FFFFFFFF</color>
+    <color name="fila_pulsada">#142F6FEB</color>
+    <color name="icono_fondo">#2F6FEB</color>
+</resources>

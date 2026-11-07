@@ -1,0 +1,13 @@
+[package]
+name = "flow-texto"
+description = "Plugin de ejemplo (Executable v1 y v2): transforma texto"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "flow-texto"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"

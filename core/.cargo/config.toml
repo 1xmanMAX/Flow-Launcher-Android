@@ -1,0 +1,10 @@
+# Paginas de 16 KB: obligatorio en Google Play para apps con codigo nativo
+# (Android 15+). Sin esto la app no arranca en los moviles con paginas de 16 KB.
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
+
+[target.armv7-linux-androideabi]
+rustflags = ["-C", "link-arg=-Wl,-z,max-page-size=16384"]
