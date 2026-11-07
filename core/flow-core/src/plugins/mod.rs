@@ -1,6 +1,8 @@
 //! Los plugins de Flow Launcher: cargarlos, decidir a cuales va cada
 //! consulta, preguntarles en paralelo y entender lo que contestan.
 
+#[cfg(feature = "js")]
+pub mod js;
 pub mod manifiesto;
 pub mod proceso;
 
@@ -23,11 +25,19 @@ pub struct Plugin {
     pub exe: Option<PathBuf>,
     dir_ajustes: PathBuf,
     proceso: Mutex<Option<Arc<ProcesoV2>>>,
+    /// El motor de JavaScript, si lo es.
+    #[cfg(feature = "js")]
+    js: Option<js::Js>,
 }
 
 impl Plugin {
     pub fn compatible(&self) -> bool {
-        self.exe.is_some() && !matches!(self.m.lenguaje, Lenguaje::Otro(_))
+        self.exe.is_some()
+            && match self.m.lenguaje {
+                Lenguaje::EjecutableV1 | Lenguaje::EjecutableV2 => true,
+                Lenguaje::JavaScript => cfg!(feature = "js"),
+                Lenguaje::Otro(_) => false,
+            }
     }
 
     pub fn estado(&self) -> String {
@@ -40,6 +50,10 @@ impl Plugin {
         if self.m.desactivado {
             return "Desactivado".into();
         }
+        #[cfg(feature = "js")]
+        if let Some(e) = self.js.as_ref().and_then(js::Js::error) {
+            return e;
+        }
         "Listo".into()
     }
 
@@ -47,7 +61,7 @@ impl Plugin {
         let m = &self.m;
         json!({
             "id": m.id, "name": m.nombre, "author": m.autor, "version": m.version,
-            "language": match &m.lenguaje { Lenguaje::EjecutableV1 => "Executable", Lenguaje::EjecutableV2 => "Executable_V2", Lenguaje::Otro(o) => o.as_str() },
+            "language": match &m.lenguaje { Lenguaje::EjecutableV1 => "Executable", Lenguaje::EjecutableV2 => "Executable_V2", Lenguaje::JavaScript => "JavaScript", Lenguaje::Otro(o) => o.as_str() },
             "description": m.descripcion, "website": m.web, "actionKeywords": m.palabras,
             "actionKeyword": m.palabras.first(),
             "pluginDirectory": m.dir, "pluginSettingsDirectoryPath": self.dir_ajustes,
@@ -74,12 +88,28 @@ impl Plugin {
 
     /// Calienta el proceso antes de la primera tecla.
     pub fn preparar(&self, eventos: &Eventos) {
-        if self.m.lenguaje == Lenguaje::EjecutableV2 && self.compatible() {
-            self.proceso(eventos);
+        if !self.compatible() {
+            return;
+        }
+        match self.m.lenguaje {
+            Lenguaje::EjecutableV2 => {
+                self.proceso(eventos);
+            }
+            #[cfg(feature = "js")]
+            Lenguaje::JavaScript => {
+                if let Some(js) = &self.js {
+                    js.preparar(&|| self.metadatos(), eventos);
+                }
+            }
+            _ => {}
         }
     }
 
-    fn pedir(&self, metodo: &str, params_v2: Value, params_v1: Value, espera: Duration, eventos: &Eventos) -> Option<Value> {
+    /// Una peticion al plugin. Cada modo recibe los parametros a su manera:
+    /// v2 como los manda Flow, v1 en `parameters`, y JavaScript como los
+    /// argumentos de la funcion.
+    fn pedir(&self, metodo: &str, params_v2: Value, params_v1: Value, params_js: Value, espera: Duration, eventos: &Eventos) -> Option<Value> {
+        let _ = &params_js;
         match self.m.lenguaje {
             Lenguaje::EjecutableV2 => self.proceso(eventos)?.llamar(metodo, params_v2, espera),
             Lenguaje::EjecutableV1 => {
@@ -94,6 +124,10 @@ impl Plugin {
                 }
                 Some(r)
             }
+            #[cfg(feature = "js")]
+            Lenguaje::JavaScript => self.js.as_ref()?.llamar(metodo, &params_js, espera, &|| self.metadatos(), eventos),
+            #[cfg(not(feature = "js"))]
+            Lenguaje::JavaScript => None,
             Lenguaje::Otro(_) => None,
         }
     }
@@ -103,14 +137,14 @@ impl Plugin {
             "rawQuery": crudo, "search": busqueda, "actionKeyword": palabra,
             "searchTerms": busqueda.split_whitespace().collect::<Vec<_>>(), "isReQuery": false,
         });
-        let Some(r) = self.pedir("query", json!([q, {}]), json!([busqueda]), espera, eventos) else {
+        let Some(r) = self.pedir("query", json!([q, {}]), json!([busqueda]), json!([q]), espera, eventos) else {
             return Vec::new();
         };
         self.leer_resultados(&r, palabra == "*" || palabra.is_empty())
     }
 
     pub fn menu(&self, contexto: &Value, espera: Duration, eventos: &Eventos) -> Vec<Resultado> {
-        let r = self.pedir("context_menu", json!([contexto]), json!([contexto]), espera, eventos);
+        let r = self.pedir("context_menu", json!([contexto]), json!([contexto]), json!([contexto]), espera, eventos);
         r.map(|r| self.leer_resultados(&r, false)).unwrap_or_default()
     }
 
@@ -125,9 +159,10 @@ impl Plugin {
             }
             return true;
         }
-        let r = self.pedir(metodo, json!([parametros]), parametros.clone(), espera, eventos);
+        let r = self.pedir(metodo, json!([parametros]), parametros.clone(), parametros.clone(), espera, eventos);
         let por_defecto = !clave(accion, "dontHideAfterAction").and_then(Value::as_bool).unwrap_or(false);
-        r.as_ref().and_then(|r| clave(r, "hide")).and_then(Value::as_bool).unwrap_or(por_defecto)
+        // `{"hide": false}`, o directamente `false`.
+        r.as_ref().and_then(|r| r.as_bool().or_else(|| clave(r, "hide").and_then(Value::as_bool))).unwrap_or(por_defecto)
     }
 
     /// `{"result": [...]}` o directamente la lista; claves en camelCase o
@@ -151,7 +186,7 @@ impl Plugin {
                     i if i.starts_with("http") || Path::new(&i).is_absolute() => i,
                     i => self.m.dir.join(i.replace('\\', "/")).to_string_lossy().to_string(),
                 };
-                let score = clave(x, "Score").and_then(Value::as_i64).unwrap_or(0).clamp(-100_000, 100_000) as i32;
+                let score = clave(x, "Score").and_then(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64))).unwrap_or(0).clamp(-100_000, 100_000) as i32;
                 let resaltado = clave(x, "TitleHighlightData")
                     .and_then(Value::as_array)
                     .map(|a| a.iter().filter_map(Value::as_u64).map(|n| n as u16).collect())
@@ -221,7 +256,16 @@ impl Host {
         let m = Manifiesto::leer(dir)?;
         let exe = m.ruta_ejecutable(self.dir_libs.as_deref());
         let dir_ajustes = self.dir_ajustes.join(&m.id);
-        let p = Arc::new(Plugin { m, exe, dir_ajustes, proceso: Mutex::new(None) });
+        #[cfg(feature = "js")]
+        let js = exe.clone().filter(|_| m.lenguaje == Lenguaje::JavaScript).map(|f| js::Js::nuevo(f, dir_ajustes.clone()));
+        let p = Arc::new(Plugin {
+            m,
+            exe,
+            dir_ajustes,
+            proceso: Mutex::new(None),
+            #[cfg(feature = "js")]
+            js,
+        });
         let mut lista = self.plugins.write().map_err(|_| "bloqueo roto")?;
         if let Some(viejo) = lista.iter().position(|x| x.m.id == p.m.id) {
             lista.remove(viejo).cerrar();

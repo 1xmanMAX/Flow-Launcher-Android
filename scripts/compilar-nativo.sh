@@ -7,7 +7,9 @@
 #
 # Requisitos: ANDROID_NDK_HOME (o ANDROID_HOME con el NDK), rustup target add
 # aarch64-linux-android armv7-linux-androideabi x86_64-linux-android, y
-# cargo install cargo-ndk.
+# cargo install cargo-ndk. Y libclang (apt install libclang-dev, o la del
+# NDK con LIBCLANG_PATH): con ella se generan al compilar las cabeceras de
+# QuickJS, el motor de los plugins de JavaScript.
 set -euo pipefail
 raiz="$(cd "$(dirname "$0")/.." && pwd)"
 salida="$raiz/android/app/src/main/jniLibs"

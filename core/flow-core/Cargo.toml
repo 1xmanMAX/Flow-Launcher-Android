@@ -12,3 +12,17 @@ crate-type = ["cdylib", "rlib"]
 [dependencies]
 serde_json = "1"
 jni = { version = "0.21", default-features = false }
+# El motor de los plugins de JavaScript (QuickJS-ng, en C, enlazado dentro).
+rquickjs = { version = "0.14", default-features = false, features = ["std"], optional = true }
+
+# rquickjs no trae las cabeceras ya traducidas para Android: alli se generan
+# con bindgen al compilar (usa la libclang del sistema; cargo-ndk le pasa el
+# sysroot del NDK). En el ordenador se usan las que trae.
+[target.'cfg(target_os = "android")'.dependencies]
+rquickjs-sys = { version = "0.14", features = ["bindgen"], optional = true }
+
+[features]
+default = ["js"]
+# Plugins de JavaScript (`"Language": "JavaScript"`). Sin ella, el nucleo
+# pesa menos y esos plugins salen como no compatibles.
+js = ["dep:rquickjs", "dep:rquickjs-sys"]
