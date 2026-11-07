@@ -57,7 +57,7 @@ impl Motor {
     }
 
     pub fn consultar(&self, texto: &str, max: usize) -> Respuesta {
-        let texto = texto.trim_start();
+        let texto = recortar(texto.trim_start());
         let (primera, resto) = texto.split_once(' ').unwrap_or((texto, ""));
         let tiene_espacio = texto.contains(' ');
 
@@ -146,6 +146,7 @@ impl Motor {
     }
 
     pub fn consultar_plugins(&self, texto: &str, max: usize, espera: Duration) -> Vec<Resultado> {
+        let texto = recortar(texto);
         let mut r = self.host.consultar(texto, espera);
         // Lo elegido antes con esta consulta, primero (como en lo local).
         if let Ok(h) = self.historial.lock() {
@@ -160,9 +161,12 @@ impl Motor {
 
     /// La app avisa de lo elegido. Para un plugin se recuerda por su titulo.
     pub fn registrar_uso(&self, consulta: &str, accion: &str) {
-        if let Ok(mut h) = self.historial.lock() {
+        let copia = self.historial.lock().ok().and_then(|mut h| {
             h.registrar(consulta, accion);
-            h.guardar();
+            h.copia()
+        });
+        if let Some(c) = copia {
+            c.escribir();
         }
     }
 
@@ -196,6 +200,15 @@ impl Motor {
 
     pub fn elementos(&self) -> usize {
         self.indice.read().map(|i| i.len()).unwrap_or(0)
+    }
+}
+
+/// Nadie busca con mas de 500 caracteres: un texto enorme pegado no puede
+/// frenar la busqueda.
+fn recortar(t: &str) -> &str {
+    match t.char_indices().nth(500) {
+        Some((i, _)) => &t[..i],
+        None => t,
     }
 }
 

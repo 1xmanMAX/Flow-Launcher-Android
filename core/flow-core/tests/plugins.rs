@@ -140,3 +140,31 @@ fn global_sin_palabra_clave() {
     // Los globales no pasan por encima de lo local muy seguro.
     assert!(r[0].puntos <= 900);
 }
+
+/// Un plugin que arranca pero nunca lee ni contesta: tras unos fallos se
+/// relanza, y ninguna consulta espera mas de lo que debe.
+#[cfg(unix)]
+#[test]
+fn un_plugin_colgado_se_relanza_y_no_bloquea() {
+    use std::os::unix::fs::PermissionsExt;
+    let raiz = temporal("colgado");
+    let colgado = raiz.join("colgado.sh");
+    // Cuenta sus arranques en un fichero y despues no hace nada.
+    let cuenta = raiz.join("arranques");
+    std::fs::write(&colgado, format!("#!/bin/sh\necho x >> '{}'\nexec sleep 60\n", cuenta.display())).unwrap();
+    std::fs::set_permissions(&colgado, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let plugins = raiz.join("plugins");
+    plugin(&plugins, "c", "C", "Executable_V2", "c", &colgado);
+    let m = Motor::nuevo(&raiz.join("datos"), None);
+    m.host.cargar_carpeta(&plugins);
+    let t = Instant::now();
+    for i in 0..12 {
+        let t1 = Instant::now();
+        assert!(m.consultar_plugins(&format!("c {i}"), 10, Duration::from_millis(100)).is_empty());
+        // initialize (100 ms) + la consulta (100 ms), como mucho.
+        assert!(t1.elapsed() < Duration::from_millis(400), "{:?}", t1.elapsed());
+    }
+    assert!(t.elapsed() < Duration::from_secs(4));
+    let arranques = std::fs::read_to_string(&cuenta).unwrap().lines().count();
+    assert!(arranques >= 2, "se relanzo {arranques} veces");
+}

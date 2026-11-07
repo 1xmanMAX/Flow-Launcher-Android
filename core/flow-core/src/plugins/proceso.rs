@@ -12,8 +12,8 @@ use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::mpsc::{self, Sender};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Sender, SyncSender, TrySendError};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -64,8 +64,15 @@ pub fn responder_api(metodo: &str, params: &Value) -> Result<Value, String> {
     }
 }
 
+/// Si tantas peticiones seguidas se quedan sin respuesta, el plugin esta
+/// colgado: se mata y se vuelve a arrancar.
+pub const MAX_FALLOS: u32 = 3;
+
 pub struct ProcesoV2 {
-    entrada: Mutex<ChildStdin>,
+    /// Lo que se le escribe pasa por un hilo propio con una cola corta: si
+    /// el plugin deja de leer, se descarta en vez de bloquear a quien busca.
+    entrada: SyncSender<String>,
+    fallos: AtomicU32,
     hijo: Mutex<Child>,
     pendientes: Arc<Mutex<HashMap<u64, Sender<Value>>>>,
     siguiente: AtomicU64,
@@ -81,16 +88,32 @@ impl ProcesoV2 {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
-        let entrada = hijo.stdin.take().expect("stdin");
+        let stdin: ChildStdin = hijo.stdin.take().expect("stdin");
         let salida = hijo.stdout.take().expect("stdout");
         let errores = hijo.stderr.take().expect("stderr");
+        let (entrada, cola) = mpsc::sync_channel::<String>(32);
         let p = Arc::new(ProcesoV2 {
-            entrada: Mutex::new(entrada),
+            entrada,
+            fallos: AtomicU32::new(0),
             hijo: Mutex::new(hijo),
             pendientes: Arc::new(Mutex::new(HashMap::new())),
             siguiente: AtomicU64::new(1),
             vivo: Arc::new(AtomicBool::new(true)),
         });
+
+        // Lo que se le manda al plugin.
+        let vivo_e = p.vivo.clone();
+        std::thread::Builder::new()
+            .name("plugin-escritor".into())
+            .spawn(move || {
+                let mut stdin = stdin;
+                for linea in cola {
+                    if stdin.write_all(linea.as_bytes()).and_then(|_| stdin.flush()).is_err() {
+                        vivo_e.store(false, Ordering::SeqCst);
+                        break;
+                    }
+                }
+            })?;
 
         // Lo que llega del plugin.
         let pendientes = p.pendientes.clone();
@@ -152,11 +175,23 @@ impl ProcesoV2 {
         self.vivo.load(Ordering::SeqCst)
     }
 
+    /// Vivo y contestando.
+    pub fn sano(&self) -> bool {
+        self.vivo() && self.fallos.load(Ordering::SeqCst) < MAX_FALLOS
+    }
+
     fn escribir(&self, v: &Value) -> bool {
         let mut linea = v.to_string();
         linea.push('\n');
-        let Ok(mut e) = self.entrada.lock() else { return false };
-        e.write_all(linea.as_bytes()).and_then(|_| e.flush()).is_ok()
+        match self.entrada.try_send(linea) {
+            Ok(()) => true,
+            // La cola llena: el plugin no lee. Cuenta como un fallo.
+            Err(TrySendError::Full(_)) => {
+                self.fallos.fetch_add(1, Ordering::SeqCst);
+                false
+            }
+            Err(TrySendError::Disconnected(_)) => false,
+        }
     }
 
     /// Una peticion y su respuesta, esperando como mucho `espera`. Si no
@@ -173,9 +208,12 @@ impl ProcesoV2 {
             return None;
         }
         match rx.recv_timeout(espera) {
-            Ok(v) if v.get("__error").is_some() => None,
-            Ok(v) => Some(v),
+            Ok(v) => {
+                self.fallos.store(0, Ordering::SeqCst);
+                v.get("__error").is_none().then_some(v)
+            }
             Err(_) => {
+                self.fallos.fetch_add(1, Ordering::SeqCst);
                 if let Ok(mut m) = self.pendientes.lock() {
                     m.remove(&id);
                 }

@@ -12,7 +12,10 @@ pub fn calcular(texto: &str) -> Option<f64> {
     if !tiene_operacion {
         return None;
     }
-    let mut p = Analizador { c: t.chars().collect(), i: 0 };
+    if t.chars().count() > 300 {
+        return None;
+    }
+    let mut p = Analizador { c: t.chars().collect(), i: 0, hondo: 0 };
     let v = p.suma()?;
     p.espacios();
     if p.i != p.c.len() || !v.is_finite() {
@@ -34,7 +37,12 @@ pub fn formato(v: f64) -> String {
 struct Analizador {
     c: Vec<char>,
     i: usize,
+    /// Cuantos parentesis o signos anidados: con un limite, un texto con
+    /// miles de `(` no desborda la pila.
+    hondo: u32,
 }
+
+const MAX_HONDO: u32 = 64;
 
 impl Analizador {
     fn espacios(&mut self) {
@@ -98,6 +106,16 @@ impl Analizador {
     }
 
     fn unario(&mut self) -> Option<f64> {
+        self.hondo += 1;
+        if self.hondo > MAX_HONDO {
+            return None;
+        }
+        let r = self.unario_sin_limite();
+        self.hondo -= 1;
+        r
+    }
+
+    fn unario_sin_limite(&mut self) -> Option<f64> {
         match self.ver() {
             Some('-') => {
                 self.i += 1;
@@ -197,6 +215,10 @@ mod pruebas {
         assert_eq!(calcular("g 2+2"), None);
         assert_eq!(calcular("1/0"), None);
         assert_eq!(calcular("2+"), None);
+        // Ni miles de parentesis ni de signos tumban nada.
+        assert_eq!(calcular(&format!("{}1{}", "(".repeat(5000), ")".repeat(5000))), None);
+        assert_eq!(calcular(&format!("{}1", "-".repeat(200))), None);
+        assert_eq!(calcular("((((1+2))))*2"), Some(6.0));
     }
 
     #[test]

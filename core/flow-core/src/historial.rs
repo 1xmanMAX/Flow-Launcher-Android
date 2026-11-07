@@ -10,6 +10,13 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_CONSULTAS: usize = 2000;
+const MAX_USOS: usize = 1000;
+
+/// Lo que no se recuerda: busquedas web (llevan lo buscado), lo copiado y
+/// los cambios de consulta. Ni aportan ni deben quedarse en disco.
+fn se_recuerda(accion: &str) -> bool {
+    !(accion.starts_with("url:") || accion.starts_with("copiar:") || accion.starts_with("consulta:"))
+}
 
 pub fn ahora_ms() -> u64 {
     SystemTime::now()
@@ -50,6 +57,15 @@ impl Historial {
     }
 
     pub fn registrar(&mut self, consulta: &str, accion: &str) {
+        if !se_recuerda(accion) {
+            return;
+        }
+        if self.usos.len() >= MAX_USOS && !self.usos.contains_key(accion) {
+            // Fuera el mas antiguo.
+            if let Some(viejo) = self.usos.iter().min_by_key(|(_, (_, u))| *u).map(|(a, _)| a.clone()) {
+                self.usos.remove(&viejo);
+            }
+        }
         let e = self.usos.entry(accion.to_string()).or_insert((0, 0));
         e.0 = e.0.saturating_add(1);
         e.1 = ahora_ms();
@@ -94,13 +110,14 @@ impl Historial {
         v
     }
 
-    /// Escribe a disco si algo cambio. Nunca falla: el historial es ayuda.
-    pub fn guardar(&mut self) {
+    /// Lo que hay que escribir, si algo cambio: se prepara con el bloqueo
+    /// tomado y se escribe fuera ([`Copia::escribir`]), para que el disco
+    /// nunca frene una consulta.
+    pub fn copia(&mut self) -> Option<Copia> {
         if !self.cambiado {
-            return;
+            return None;
         }
-        let Some(dir) = &self.ruta else { return };
-        let _ = std::fs::create_dir_all(dir);
+        let dir = self.ruta.clone()?;
         let mut usos = String::new();
         for (a, (v, u)) in &self.usos {
             if !a.contains('\n') {
@@ -113,11 +130,30 @@ impl Historial {
                 elegidos.push_str(&format!("{q}\t{a}\n"));
             }
         }
-        if escribir_seguro(&dir.join("usos.tsv"), usos.as_bytes())
-            && escribir_seguro(&dir.join("elegidos.tsv"), elegidos.as_bytes())
-        {
-            self.cambiado = false;
+        self.cambiado = false;
+        Some(Copia { dir, usos, elegidos })
+    }
+
+    /// Escribe a disco si algo cambio (con el bloqueo tomado: para pruebas).
+    pub fn guardar(&mut self) {
+        if let Some(c) = self.copia() {
+            c.escribir();
         }
+    }
+}
+
+pub struct Copia {
+    dir: PathBuf,
+    usos: String,
+    elegidos: String,
+}
+
+impl Copia {
+    /// Nunca falla: el historial es una ayuda.
+    pub fn escribir(&self) {
+        let _ = std::fs::create_dir_all(&self.dir);
+        escribir_seguro(&self.dir.join("usos.tsv"), self.usos.as_bytes());
+        escribir_seguro(&self.dir.join("elegidos.tsv"), self.elegidos.as_bytes());
     }
 }
 
@@ -142,6 +178,23 @@ mod pruebas {
         assert!(h.extra("cam", "app:camara") > 400);
         assert!(h.extra("otra", "app:camara") < 400);
         assert_eq!(h.extra("cam", "app:otra"), 0);
+    }
+
+    #[test]
+    fn no_recuerda_lo_buscado_en_la_web() {
+        let mut h = Historial::default();
+        h.registrar("g secreto", "url:https://google.com/search?q=secreto");
+        h.registrar("", "copiar:42");
+        assert!(h.mas_usadas(10).is_empty());
+    }
+
+    #[test]
+    fn tiene_tope() {
+        let mut h = Historial::default();
+        for i in 0..(MAX_USOS + 50) {
+            h.registrar("", &format!("app:{i}"));
+        }
+        assert_eq!(h.usos.len(), MAX_USOS);
     }
 
     #[test]

@@ -40,10 +40,15 @@ fn lista(env: &mut JNIEnv, a: &JObjectArray) -> Vec<String> {
     let n = env.get_array_length(a).unwrap_or(0);
     let mut v = Vec::with_capacity(n as usize);
     for i in 0..n {
-        let s = env.get_object_array_element(a, i).map(JString::from).ok();
-        v.push(s.map(|s| texto(env, &s)).unwrap_or_default());
-        // Cada elemento es una referencia local: liberarla para no agotar la
-        // tabla con miles de contactos.
+        let Ok(o) = env.get_object_array_element(a, i) else {
+            v.push(String::new());
+            continue;
+        };
+        let s = JString::from(o);
+        v.push(texto(env, &s));
+        // Cada elemento es una referencia local: liberarla ya. En Android 7
+        // la tabla tiene 512 huecos y con 100 apps (x5 listas) se agotaria.
+        let _ = env.delete_local_ref(s);
     }
     v
 }

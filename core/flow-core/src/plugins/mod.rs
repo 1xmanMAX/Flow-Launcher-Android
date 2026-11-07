@@ -23,6 +23,21 @@ pub fn clave<'a>(v: &'a Value, k: &str) -> Option<&'a Value> {
     o.get(k).or_else(|| o.iter().find(|(c, _)| c.eq_ignore_ascii_case(k)).map(|(_, v)| v))
 }
 
+/// La posicion de un caracter contada en unidades UTF-16, como caracter.
+fn utf16_a_caracter(t: &str, u16_pos: usize) -> Option<u16> {
+    let mut u = 0;
+    for (i, c) in t.chars().enumerate() {
+        if u == u16_pos {
+            return Some(i as u16);
+        }
+        u += c.len_utf16();
+        if u > u16_pos {
+            return None;
+        }
+    }
+    None
+}
+
 pub struct Plugin {
     pub m: Manifiesto,
     pub exe: Option<PathBuf>,
@@ -31,6 +46,9 @@ pub struct Plugin {
     /// Variables de entorno que Flow les pone (`FLOW_VERSION`...).
     entorno: Vec<(String, String)>,
     proceso: Mutex<Option<Arc<ProcesoV2>>>,
+    /// Alguien esta arrancando el proceso (lanzarlo e `initialize`, hasta
+    /// 5 s): los demas no se quedan esperando con el bloqueo tomado.
+    arrancando: std::sync::atomic::AtomicBool,
 }
 
 impl Plugin {
@@ -66,27 +84,53 @@ impl Plugin {
         })
     }
 
-    /// El proceso v2, arrancado (e `initialize`) la primera vez o si murio.
-    fn proceso(&self, eventos: &Eventos) -> Option<Arc<ProcesoV2>> {
-        let mut p = self.proceso.lock().ok()?;
-        if let Some(vivo) = p.as_ref().filter(|p| p.vivo()) {
-            return Some(vivo.clone());
+    fn proceso_sano(&self) -> Option<Arc<ProcesoV2>> {
+        self.proceso.lock().ok()?.as_ref().filter(|p| p.sano()).cloned()
+    }
+
+    /// El proceso v2, arrancado (e `initialize`) la primera vez, si murio o
+    /// si dejo de contestar. Si ya lo esta arrancando otro hilo, se espera
+    /// como mucho `espera`.
+    fn proceso(&self, eventos: &Eventos, espera: Duration) -> Option<Arc<ProcesoV2>> {
+        use std::sync::atomic::Ordering;
+        let limite = std::time::Instant::now() + espera;
+        loop {
+            if let Some(p) = self.proceso_sano() {
+                return Some(p);
+            }
+            if !self.arrancando.swap(true, Ordering::SeqCst) {
+                let r = self.arrancar(eventos, espera);
+                self.arrancando.store(false, Ordering::SeqCst);
+                return r;
+            }
+            if std::time::Instant::now() >= limite {
+                return None;
+            }
+            std::thread::sleep(Duration::from_millis(5));
         }
+    }
+
+    /// `espera_init`: cuanto se espera al `initialize`. Desde una consulta, lo
+    /// mismo que la consulta: nadie se queda colgado por un plugin lento.
+    fn arrancar(&self, eventos: &Eventos, espera_init: Duration) -> Option<Arc<ProcesoV2>> {
+        // El viejo (muerto o colgado) se mata al soltarlo (Drop).
+        let viejo = self.proceso.lock().ok()?.take();
+        drop(viejo);
         let _ = std::fs::create_dir_all(&self.dir_ajustes);
         let nuevo = ProcesoV2::lanzar(self.exe.as_ref()?, &self.m.dir, &self.entorno, eventos.clone()).ok()?;
         nuevo.llamar(
             "initialize",
             json!([{ "currentPluginMetadata": self.metadatos(), "api": {} }]),
-            Duration::from_secs(5),
+            espera_init,
         );
-        *p = Some(nuevo.clone());
+        *self.proceso.lock().ok()? = Some(nuevo.clone());
         Some(nuevo)
     }
 
     /// Calienta el proceso antes de la primera tecla.
     pub fn preparar(&self, eventos: &Eventos) {
         if self.m.lenguaje == Lenguaje::EjecutableV2 && self.compatible() {
-            self.proceso(eventos);
+            self.proceso(eventos, Duration::from_secs(5));
         }
     }
 
@@ -94,7 +138,7 @@ impl Plugin {
     /// (`{"id", "method", "parameters", "settings"}`).
     fn pedir(&self, metodo: &str, params_v2: Value, peticion_v1: Value, espera: Duration, eventos: &Eventos) -> Option<Value> {
         let r = match self.m.lenguaje {
-            Lenguaje::EjecutableV2 => self.proceso(eventos)?.llamar(metodo, params_v2, espera),
+            Lenguaje::EjecutableV2 => self.proceso(eventos, espera)?.llamar(metodo, params_v2, espera),
             Lenguaje::EjecutableV1 => {
                 let r = proceso::una_vez(self.exe.as_ref()?, &self.m.dir, &self.entorno, &peticion_v1, espera)?;
                 // En v1 lo que el plugin le pide a Flow viene como respuesta:
@@ -195,13 +239,15 @@ impl Plugin {
                     i => self.m.dir.join(i.replace('\\', "/")).to_string_lossy().to_string(),
                 };
                 let score = clave(x, "Score").and_then(Value::as_i64).unwrap_or(0).clamp(-100_000, 100_000) as i32;
+                let titulo = s("Title");
+                // Flow (C#) cuenta en UTF-16; aqui se cuenta por caracteres.
                 let resaltado = clave(x, "TitleHighlightData")
                     .and_then(Value::as_array)
-                    .map(|a| a.iter().filter_map(Value::as_u64).map(|n| n as u16).collect())
+                    .map(|a| a.iter().filter_map(Value::as_u64).filter_map(|n| utf16_a_caracter(&titulo, n as usize)).collect())
                     .unwrap_or_default();
                 let opcional = |k: &str| Some(s(k)).filter(|t| !t.is_empty());
                 Resultado {
-                    titulo: s("Title"),
+                    titulo,
                     subtitulo: s("SubTitle"),
                     icono,
                     // Los globales, por debajo de lo que sale del indice si
@@ -273,7 +319,7 @@ impl Host {
             ("FLOW_PROGRAM_DIRECTORY".to_string(), datos.clone()),
             ("FLOW_APPLICATION_DIRECTORY".to_string(), datos),
         ];
-        let p = Arc::new(Plugin { m, exe, dir_ajustes, ajustes, entorno, proceso: Mutex::new(None) });
+        let p = Arc::new(Plugin { m, exe, dir_ajustes, ajustes, entorno, proceso: Mutex::new(None), arrancando: Default::default() });
         let mut lista = self.plugins.write().map_err(|_| "bloqueo roto")?;
         if let Some(viejo) = lista.iter().position(|x| x.m.id == p.m.id) {
             lista.remove(viejo).cerrar();
