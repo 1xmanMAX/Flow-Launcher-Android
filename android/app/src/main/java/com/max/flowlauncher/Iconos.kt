@@ -7,7 +7,6 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import android.util.LruCache
 import android.widget.ImageView
-import java.util.concurrent.Executors
 
 /**
  * Los iconos se cargan fuera del hilo de la interfaz y se guardan en memoria:
@@ -15,7 +14,7 @@ import java.util.concurrent.Executors
  */
 object Iconos {
     private val cache = LruCache<String, Drawable>(150)
-    private val hilo = Executors.newFixedThreadPool(2) { r -> Thread(r, "flow-iconos") }
+    private val hilo = App.hilos("flow-iconos", 2)
 
     fun porDefecto(fuente: String): Int = when {
         fuente == "web" -> R.drawable.ic_web
@@ -50,7 +49,9 @@ object Iconos {
 
     private fun cargar(c: Context, clave: String, lado: Int): Drawable? {
         if (clave.startsWith("app:")) {
-            val (paquete, actividad) = clave.substring(4).split('/', limit = 2)
+            val partes = clave.substring(4).split('/', limit = 2)
+            if (partes.size < 2) return null
+            val (paquete, actividad) = partes
             return c.packageManager.getActivityIcon(ComponentName(paquete, actividad))
         }
         // Una imagen de un plugin: a su tamano, no al del fichero.
