@@ -77,6 +77,15 @@ volcar() {  # $1 = nombre; deja $salida/$1.xml, $1.png y el texto visible en $1.
 espera() {  # $1 = nombre, $2 = texto esperado
   grep -qF -- "$2" "$salida/$1.txt" && echo "OK  $1: «$2»" || falla "$1: no aparece «$2»"
 }
+tocar() {  # $1 = volcado donde buscar, $2 = texto, $3 = "largo" para mantener pulsado
+  local b
+  b="$(grep -o "text=\"$2\"[^>]*bounds=\"[^\"]*\"" "$salida/$1.xml" | head -1 | grep -o 'bounds="[^"]*"' | tr -dc '0-9,[]' )"
+  [[ -z "$b" ]] && { falla "$1: no se puede tocar «$2»"; return; }
+  local n=(${b//[^0-9]/ })
+  local x=$(( (n[0] + n[2]) / 2 )) y=$(( (n[1] + n[3]) / 2 ))
+  if [[ "${3:-}" == largo ]]; then "$adb" shell input swipe $x $y $x $y 900; else "$adb" shell input tap $x $y; fi
+  sleep 4
+}
 no_espera() {  # $1 = nombre, $2 = texto que NO debe salir
   grep -qF -- "$2" "$salida/$1.txt" && falla "$1: no deberia salir «$2»" || echo "OK  $1: sin «$2»"
 }
@@ -105,6 +114,13 @@ consulta buscar-tx "tx%shola" "HOLA"
 consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 consulta buscar-pixpin "p%st%scomprar%span" "Apuntar «comprar pan» como tarea"
 consulta buscar-archivos "c%stesis" "Tesis final.pdf"
+# Mantener pulsado el archivo: el menu con «Compartir», y compartir abre la lista de apps.
+tocar buscar-archivos "Tesis final.pdf" largo; volcar menu-archivo
+espera menu-archivo "Compartir"; espera menu-archivo "Copiar la ruta"
+tocar menu-archivo "Compartir"; volcar compartir
+espera compartir "Tesis final.pdf"
+"$adb" shell input keyevent KEYCODE_BACK; sleep 2
+"$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 4
 espera buscar-tx "aG9sYQ=="
 "$adb" shell "ps -A -o PID,PPID,NAME | grep -E 'flowlauncher|flow-texto'" | tee "$salida/procesos.txt"
 grep -q libflow-texto.so "$salida/procesos.txt" || falla "no hay proceso del plugin"

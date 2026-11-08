@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Iconos que se piden por nombre (res:<nombre>): que el encogedor no los quite. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_compartir,@drawable/ic_abrir_con,@drawable/ic_copiar,@drawable/ic_carpeta" />

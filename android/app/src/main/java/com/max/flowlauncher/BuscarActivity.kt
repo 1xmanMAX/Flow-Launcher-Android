@@ -308,6 +308,12 @@ class BuscarActivity : Activity() {
 
     /** Menu del plugin, copiar, o la ficha de la app. */
     private fun pulsacionLarga(r: Resultado) {
+        // Un archivo del movil: compartir, abrir con, su carpeta, copiar.
+        if (r.accion.startsWith("archivo:")) {
+            ++turno
+            mostrar(MenuDeArchivo.de(r.accion.removePrefix("archivo:")))
+            return
+        }
         // El menu de una fila de una app proveedora.
         if (r.fuente.startsWith("proveedor:") && r.contexto != null) {
             val mio = ++turno

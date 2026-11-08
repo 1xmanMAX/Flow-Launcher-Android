@@ -55,6 +55,8 @@ object Acciones {
             }
             "interno" -> interno(c, resto)
             "archivo" -> archivo(c, resto)
+            "compartir" -> compartir(c, resto)
+            "abrircon" -> archivo(c, resto, elegir = true)
             else -> false
         }
     }
@@ -64,13 +66,36 @@ object Acciones {
      * [ProveedorDeArchivos]. Las carpetas llegan acabadas en `/` (sin mirar
      * el disco en este hilo).
      */
-    private fun archivo(c: Context, ruta: String): Boolean {
+    private fun archivo(c: Context, ruta: String, elegir: Boolean = false): Boolean {
         if (ruta.endsWith("/")) return carpeta(c, ruta.trimEnd('/'))
         val f = File(ruta)
         val i = Intent(Intent.ACTION_VIEW)
             .setDataAndType(ProveedorDeArchivos.uri(c, f), ProveedorDeArchivos.tipo(f.name) ?: "*/*")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        return abrir(c, i)
+        // «Abrir con…»: siempre la lista de apps, aunque haya una por defecto.
+        return abrir(c, if (elegir) Intent.createChooser(i, "Abrir «${f.name}» con") else i)
+    }
+
+    /**
+     * Compartir un archivo con cualquier app (WhatsApp, Gmail, Drive...). Va
+     * un `content://` con permiso de lectura solo para la app elegida: no se
+     * copia nada y nadie mas puede leerlo.
+     */
+    private fun compartir(c: Context, ruta: String): Boolean {
+        val f = File(ruta)
+        if (!f.isFile) {
+            Toast.makeText(c, "Ya no está: ${f.name}", Toast.LENGTH_SHORT).show()
+            return false
+        }
+        val uri = ProveedorDeArchivos.uri(c, f)
+        val enviar = Intent(Intent.ACTION_SEND)
+            .setType(ProveedorDeArchivos.tipo(f.name) ?: "application/octet-stream")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .putExtra(Intent.EXTRA_SUBJECT, f.name)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // Con ClipData el permiso llega tambien a la app que se elija en la lista.
+        enviar.clipData = android.content.ClipData.newUri(c.contentResolver, f.name, uri)
+        return abrir(c, Intent.createChooser(enviar, "Compartir «${f.name}»"))
     }
 
     /**

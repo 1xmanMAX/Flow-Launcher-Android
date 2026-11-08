@@ -32,6 +32,14 @@ object Iconos {
         // nada. Volver a ponerlo, o pasar por el de por defecto, parpadea.
         if (v.tag == clave && v.drawable != null) return
         v.tag = clave
+        // Un icono propio por nombre (`res:ic_compartir`), para los menus.
+        if (clave.startsWith("res:")) {
+            val id = v.resources.getIdentifier(clave.substring(4), "drawable", v.context.packageName)
+            if (id != 0) {
+                v.setImageResource(id)
+                return
+            }
+        }
         if (clave.startsWith("def:")) {
             v.setImageResource(porDefecto(r.fuente))
             return
