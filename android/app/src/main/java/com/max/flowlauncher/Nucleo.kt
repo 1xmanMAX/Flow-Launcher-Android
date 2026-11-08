@@ -44,5 +44,12 @@ object Nucleo {
 
     external fun importarBusquedas(json: String): String
 
+    /**
+     * Indexa los archivos de `raiz` (para `c <nombre>`) en un hilo del
+     * nucleo. Vuelve enseguida; si el indice es reciente, no hace nada.
+     */
+    external fun indexarArchivos(raiz: String)
+
+    /** `{"plugins": [...], "busquedas": {...}, "elementos": n, "archivos": n, "indexando": bool}`. */
     external fun estado(): String
 }

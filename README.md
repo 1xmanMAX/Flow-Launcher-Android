@@ -54,6 +54,7 @@ Lo que se escribe:
 | `wifi` | Ajustes de Wi‑Fi |
 | `12*3+1` | 37 (toca para copiar) |
 | `g gatos` · `yt música` · `wiki Lima` · `map café` | Búsqueda web |
+| `c tesis` · `c ` | Archivos de todo el móvil, como Everything (activar «Archivos del móvil») |
 | `tx Hola` | Plugin nativo de ejemplo: MAYÚSCULAS, Base64… |
 | `cv 10 km a mi` | Plugin JavaScript de ejemplo: conversor de unidades |
 | mantener pulsado | Menú del plugin / copiar / ficha de la app |

@@ -12,16 +12,43 @@ pub struct Coincidencia {
     pub posiciones: Vec<u16>,
 }
 
-#[inline]
-fn es_inicio_de_palabra(t: &[char], i: usize) -> bool {
-    i == 0 || !t[i - 1].is_alphanumeric()
+/// Lo que se compara: `char` (cualquier texto) o `u8` (texto solo ASCII,
+/// ya en minusculas: mas rapido, para recorrer muchos nombres de archivo).
+/// Con ASCII los dos dan exactamente lo mismo.
+pub trait Letra: Copy + Eq {
+    const ESPACIO: Self;
+    fn alfanumerica(self) -> bool;
 }
 
-fn encontrar(t: &[char], q: &[char]) -> Option<usize> {
+impl Letra for char {
+    const ESPACIO: char = ' ';
+    #[inline]
+    fn alfanumerica(self) -> bool {
+        self.is_alphanumeric()
+    }
+}
+
+impl Letra for u8 {
+    const ESPACIO: u8 = b' ';
+    #[inline]
+    fn alfanumerica(self) -> bool {
+        self.is_ascii_alphanumeric()
+    }
+}
+
+#[inline]
+fn es_inicio_de_palabra<L: Letra>(t: &[L], i: usize) -> bool {
+    i == 0 || !t[i - 1].alfanumerica()
+}
+
+fn encontrar<L: Letra>(t: &[L], q: &[L]) -> Option<usize> {
     if q.len() > t.len() {
         return None;
     }
-    (0..=t.len() - q.len()).find(|&i| t[i..i + q.len()] == *q)
+    // Primero la primera letra: comparar el trozo entero en cada posicion
+    // cuesta mucho mas (y casi nunca empieza igual).
+    let primera = *q.first()?;
+    (0..=t.len() - q.len()).find(|&i| t[i] == primera && t[i..i + q.len()] == *q)
 }
 
 fn rango(desde: usize, n: usize) -> Vec<u16> {
@@ -29,7 +56,7 @@ fn rango(desde: usize, n: usize) -> Vec<u16> {
 }
 
 /// Una sola palabra de la consulta (sin espacios).
-fn termino(q: &[char], t: &[char]) -> Option<Coincidencia> {
+fn termino<L: Letra>(q: &[L], t: &[L]) -> Option<Coincidencia> {
     if q.is_empty() || q.len() > t.len() {
         return None;
     }
@@ -89,7 +116,7 @@ fn termino(q: &[char], t: &[char]) -> Option<Coincidencia> {
 /// Las letras de `q` en orden dentro de `t`. Primero se busca hacia delante
 /// el final mas temprano; despues, hacia atras, el comienzo mas tardio (la
 /// coincidencia mas apretada que acaba ahi), como hace fzf.
-fn difusa(q: &[char], t: &[char], largo: i32) -> Option<Coincidencia> {
+fn difusa<L: Letra>(q: &[L], t: &[L], largo: i32) -> Option<Coincidencia> {
     let mut k = 0;
     let mut fin = None;
     for (j, &c) in t.iter().enumerate() {
@@ -134,17 +161,17 @@ fn difusa(q: &[char], t: &[char], largo: i32) -> Option<Coincidencia> {
 
 /// La consulta entera contra un texto. Con varias palabras, primero la frase
 /// tal cual; si no, tienen que estar todas (en cualquier orden).
-pub fn puntuar(q: &[char], t: &[char]) -> Option<Coincidencia> {
+pub fn puntuar<L: Letra>(q: &[L], t: &[L]) -> Option<Coincidencia> {
     if let Some(c) = termino(q, t) {
         return Some(c);
     }
-    if !q.contains(&' ') {
+    if !q.contains(&L::ESPACIO) {
         return None;
     }
     let mut total = 0;
     let mut n = 0;
     let mut posiciones = Vec::new();
-    for palabra in q.split(|c| *c == ' ').filter(|p| !p.is_empty()) {
+    for palabra in q.split(|c| *c == L::ESPACIO).filter(|p| !p.is_empty()) {
         let c = termino(palabra, t)?;
         total += c.puntos;
         n += 1;
@@ -207,6 +234,14 @@ mod pruebas {
     #[test]
     fn desperdigada_no_vale() {
         assert!(p("az", "abcdefghijklmnopqrstuvwxyz").is_none());
+    }
+
+    #[test]
+    fn bytes_igual_que_caracteres() {
+        let casos = [("goo", "google"), ("gm", "google maps"), ("wsp", "whatsapp"), ("inf 2020", "informe 2020.pdf"), ("az", "abc xyz")];
+        for (q, t) in casos {
+            assert_eq!(puntuar(q.as_bytes(), t.as_bytes()), puntuar(&texto(q), &texto(t)), "{q} {t}");
+        }
     }
 
     #[test]

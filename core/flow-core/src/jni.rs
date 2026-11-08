@@ -242,11 +242,27 @@ pub extern "system" fn Java_com_max_flowlauncher_Nucleo_importarBusquedas(
     devolver(&mut env, &r.to_string())
 }
 
-/// `{"plugins": [...], "busquedas": {...}, "elementos": n}`.
+/// `indexarArchivos(raiz)`: empieza a indexar el almacenamiento en otro
+/// hilo, o nada si el indice es reciente. Vuelve enseguida.
+#[no_mangle]
+pub extern "system" fn Java_com_max_flowlauncher_Nucleo_indexarArchivos(mut env: JNIEnv, _c: JClass, raiz: JString) {
+    let raiz = texto(&mut env, &raiz);
+    seguro((), || {
+        if let (Some(m), false) = (motor(), raiz.is_empty()) {
+            m.indexar_archivos(&PathBuf::from(&raiz));
+        }
+    });
+}
+
+/// `{"plugins": [...], "busquedas": {...}, "elementos": n, "archivos": n,
+/// "indexando": bool}`.
 #[no_mangle]
 pub extern "system" fn Java_com_max_flowlauncher_Nucleo_estado(mut env: JNIEnv, _c: JClass) -> jstring {
     let r = seguro(json!({}), || match motor() {
-        Some(m) => json!({ "plugins": m.plugins_json(), "busquedas": m.busquedas_json(), "elementos": m.elementos() }),
+        Some(m) => json!({
+            "plugins": m.plugins_json(), "busquedas": m.busquedas_json(), "elementos": m.elementos(),
+            "archivos": m.archivos.len(), "indexando": m.archivos.indexando(),
+        }),
         None => json!({}),
     });
     devolver(&mut env, &r.to_string())

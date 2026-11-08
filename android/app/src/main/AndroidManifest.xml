@@ -9,6 +9,12 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Opcional: buscar contactos (se pide al activarlo). -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Opcional: buscar archivos («c tesis»). Hasta Android 10, el permiso
+         normal; desde Android 11, «Acceso a todos los archivos». -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- Ver las apps que se pueden abrir, sin QUERY_ALL_PACKAGES. -->
     <queries>
@@ -29,7 +35,8 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Tema"
-        android:extractNativeLibs="true">
+        android:extractNativeLibs="true"
+        android:requestLegacyExternalStorage="true">
 
         <activity
             android:name=".MainActivity"
@@ -99,6 +106,14 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+
+        <!-- Para abrir un archivo encontrado con otra app (content://, solo
+             lectura y solo del almacenamiento). -->
+        <provider
+            android:name=".ProveedorDeArchivos"
+            android:authorities="${applicationId}.archivos"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <receiver
             android:name=".AlArrancar"
