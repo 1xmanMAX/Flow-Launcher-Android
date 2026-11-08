@@ -28,6 +28,11 @@ import kotlin.math.abs
  * Se arrastra a donde se quiera y se pega al borde. Mantiene el proceso
  * vivo, asi el buscador se abre siempre «en caliente».
  */
+/** Cuanto de la burbuja queda fuera de la pantalla. */
+private const val OCULTO = 0.45f
+/** Transparencia en reposo: se ve, pero no molesta. */
+private const val REPOSO = 0.6f
+
 class BurbujaService : Service() {
 
     companion object {
@@ -87,12 +92,25 @@ class BurbujaService : Service() {
         runCatching { wm.updateViewLayout(v, p) }
     }
 
-    /** Al borde (derecho si [alBorde]) y sin salirse por arriba ni por abajo. */
+    /**
+     * Medio escondida en el borde (derecho si [alBorde]), como una pestana:
+     * no tapa casi nada y se toca sin buscarla. La lupa, en la parte que se
+     * ve. Sin salirse por arriba ni por abajo.
+     */
     private fun colocar(p: WindowManager.LayoutParams, alBorde: Boolean) {
         val m = resources.displayMetrics
-        p.x = if (alBorde) (m.widthPixels - lado).coerceAtLeast(0) else 0
+        val oculto = (lado * OCULTO).toInt()
+        p.x = if (alBorde) m.widthPixels - lado + oculto else -oculto
         p.y = p.y.coerceIn(0, (m.heightPixels - lado).coerceAtLeast(0))
+        (vista as? ImageView ?: vistaNueva)?.let { v ->
+            val r = (11 * m.density).toInt()
+            if (alBorde) v.setPadding(r, r, r + oculto, r) else v.setPadding(r + oculto, r, r, r)
+            v.alpha = REPOSO
+        }
     }
+
+    /** La vista antes de anadirla (para [colocar] la primera vez). */
+    private var vistaNueva: ImageView? = null
 
     override fun onStartCommand(i: Intent?, f: Int, id: Int) = START_STICKY
 
@@ -156,17 +174,15 @@ class BurbujaService : Service() {
             x = prefs.getInt("x", resources.displayMetrics.widthPixels - lado)
             y = prefs.getInt("y", resources.displayMetrics.heightPixels / 3)
         }
-        // Lo guardado puede ser de otra orientacion o de otra pantalla.
-        colocar(lp, alBorde = lp.x > 0)
         val v = ImageView(this).apply {
             setImageResource(R.drawable.ic_lupa_blanca)
             setBackgroundResource(R.drawable.burbuja)
-            val m = (13 * d).toInt()
-            setPadding(m, m, m, m)
-            alpha = 0.85f
             contentDescription = getString(R.string.buscar)
             elevation = 6 * d
         }
+        vistaNueva = v
+        // Lo guardado puede ser de otra orientacion o de otra pantalla.
+        colocar(lp, alBorde = lp.x > 0)
         val umbral = ViewConfiguration.get(this).scaledTouchSlop
         var x0 = 0
         var y0 = 0
@@ -191,12 +207,11 @@ class BurbujaService : Service() {
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    v.alpha = 0.85f
+                    v.alpha = REPOSO
                     if (arrastrando) {
-                        // Al borde mas cercano.
+                        // Al borde mas cercano, medio escondida otra vez.
                         val ancho = resources.displayMetrics.widthPixels
-                        lp.x = if (lp.x + lado / 2 < ancho / 2) 0 else ancho - lado
-                        lp.y = lp.y.coerceIn(0, resources.displayMetrics.heightPixels - lado)
+                        colocar(lp, alBorde = lp.x + lado / 2 >= ancho / 2)
                         runCatching { wm.updateViewLayout(v, lp) }
                         prefs.edit().putInt("x", lp.x).putInt("y", lp.y).apply()
                     } else if (e.actionMasked == MotionEvent.ACTION_UP) {
@@ -210,6 +225,7 @@ class BurbujaService : Service() {
             // BadTokenException, o el permiso se quito justo ahora.
             wm.addView(v, lp)
             vista = v
+            vistaNueva = null
             this.lp = lp
             true
         } catch (e: RuntimeException) {
