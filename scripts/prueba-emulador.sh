@@ -114,10 +114,6 @@ consulta() {  # $1 = nombre, $2 = texto (espacios como %s), $3 = resultado esper
 consulta buscar-set "set" "Ajustes del sistema"
 consulta buscar-calc "2+2" "2+2 — toca para copiar"
 consulta buscar-tx "tx%shola" "HOLA"
-# «w»: cambiar de app. Usar Ajustes un momento y volver: tiene que salir.
-"$adb" shell am start -W -a android.settings.SETTINGS >/dev/null; sleep 5
-"$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 4
-consulta buscar-ventanas "w%s" "Settings"
 consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 consulta buscar-pixpin "p%st%scomprar%span" "Apuntar «comprar pan» como tarea"
 consulta buscar-archivos "c%stesis" "Tesis final.pdf"
@@ -145,6 +141,11 @@ if [[ -f "$prueba_apk" ]]; then
   no_espera prov-tesis "en PixPin"
   consulta prov-tarea "p%st%span" "Apuntar «pan» en Inbox"
   no_espera prov-tarea "como tarea"
+  # «w»: cambiar de app. Usar la app de prueba un momento y volver: tiene que salir.
+  "$adb" shell am start -W -n com.max.flowlauncher.prueba/.Principal >/dev/null; sleep 5
+  "$adb" shell input keyevent KEYCODE_HOME; sleep 2
+  "$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 4
+  consulta buscar-ventanas "w%s" "Proveedor de prueba"
   "$adb" shell am force-stop $pkg
 else
   echo "(sin $prueba_apk: se salta)"
