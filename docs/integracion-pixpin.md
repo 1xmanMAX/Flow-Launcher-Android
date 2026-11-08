@@ -38,6 +38,41 @@ deja de llenar el índice del buscador del teléfono (AppSearch). En la edición
 Lo de PinDesk que aún no hace el lanzador (ver «Lo del PC que aquí no está» en `docs/flow-buscador.md`): pegar
 imágenes del portapapeles (`[img 01]`), conservar o borrar capturas, y el reproductor flotante de audio.
 
+## Pendiente en PinDesk: compartir un archivo desde el buscador
+
+En el buscador, mantener pulsado un archivo del móvil (`c tesis`) ya saca
+**Compartir** como primera opción. Para que pase lo mismo con los archivos de
+PinDesk (`p tesis` → «Tesis final.pdf»), PinDesk tiene que añadir dos cosas;
+el buscador no necesita cambios:
+
+1. **La seña `pindesk://atajo/compartir/<id del mensaje>`** en
+   `AtajoActivity`: busca el archivo del mensaje y abre la hoja de compartir
+   del sistema, desde la propia actividad (que está delante, así Android deja
+   abrirla):
+
+   ```kotlin
+   Atajos.COMPARTIR -> if (id != null) {
+       val f = /* el archivo del mensaje `id` (MensajesStore) */
+       val uri = /* su content:// del FileProvider de PinDesk */
+       val enviar = Intent(Intent.ACTION_SEND)
+           .setType(/* mime por la extensión */)
+           .putExtra(Intent.EXTRA_STREAM, uri)
+           .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+       enviar.clipData = ClipData.newUri(contentResolver, f.name, uri)
+       startActivity(Intent.createChooser(enviar, "Compartir «${f.name}»"))
+   }
+   ```
+
+   Sin copiar el archivo: el `content://` con permiso de lectura solo para la
+   app elegida (rápido y seguro). Si PinDesk ya tiene un «Compartir» en el
+   chat, que la seña use ese mismo código.
+
+2. **En el menú del proveedor** (`content://…/menu` de una fila de archivo), la
+   primera fila: `titulo` «Compartir», `subtitulo` «Mandar «<nombre>» a otra
+   app», `icono` un drawable de compartir
+   (`android.resource://com.forge.pixpin/drawable/<nombre>`), `accion`
+   `pindesk://atajo/compartir/<id>`. Igual para fotos, audios y notas de voz.
+
 ## Lo que ya estaba (rama `claude/proveedor-flow-buscador` de PIXPIN_PRO_ANDROID)
 
 | PC | Android |
