@@ -107,6 +107,14 @@ object Insignias {
         "ic_buscar" to Funcion(R.drawable.ic_buscar, 0x5F6B7A),
     )
 
+    /** Un simbolo de otra app con su color, en el mismo cuadrado suave que las funciones. */
+    fun suave(c: Context, simbolo: Drawable, rgb: Int): Drawable {
+        val oscuro = (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
+        val color = 0xFF000000.toInt() or rgb
+        return Suave(color, if (oscuro) 0x33 else 0x1F, simbolo.mutate().apply { setTint(color) }, c.resources.displayMetrics.density)
+    }
+
     /** `web`, `calc`, `ic_compartir`... o null si no es una de las nuestras. */
     fun funcion(c: Context, nombre: String): Drawable? {
         val f = funciones[nombre] ?: return null

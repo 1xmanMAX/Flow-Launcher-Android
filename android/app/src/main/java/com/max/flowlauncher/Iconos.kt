@@ -84,7 +84,11 @@ object Iconos {
             else res.getIdentifier(seg.getOrNull(1) ?: return null, seg[0], paquete)
             if (id == 0) return null
             @Suppress("DEPRECATION")
-            return res.getDrawable(id)
+            val d = res.getDrawable(id)
+            // `#RRGGBB` al final: es un simbolo de un color (PixPin manda los suyos en
+            // blanco). Se dibuja como las funciones: fondo suave y el simbolo en ese color.
+            val color = u.fragment?.removePrefix("#")?.takeIf { it.length == 6 }?.toIntOrNull(16)
+            return if (color != null) Insignias.suave(c, d, color) else d
         }
         if (clave.startsWith("pkg:")) {
             return c.packageManager.getApplicationIcon(clave.substring(4))

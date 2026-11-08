@@ -47,7 +47,7 @@ contentResolver.query(
 |---|---|---|
 | `titulo` | texto | Lo que se lee |
 | `subtitulo` | texto | Dónde está, de qué chat, cuándo… |
-| `icono` | texto | `ext:pdf` → el cuadro de color de la extensión; `android.resource://<paquete>/drawable/<nombre>` → un icono de tu app (tarea, mensaje, nota…); vacío → el icono de la app |
+| `icono` | texto | `ext:pdf` → la hoja de color de la extensión; `android.resource://<paquete>/drawable/<nombre>` → un icono de tu app tal cual; con `#RRGGBB` al final (`…/drawable/lista#7048E8`) → el símbolo (de un color, p. ej. blanco) se pinta de ese color sobre un cuadrado suave del mismo color, como los del buscador; vacío → el icono de la app |
 | `puntos` | entero 0–1000 | Ordena tus filas entre sí |
 | `accion` | texto | Qué pasa al elegirla (ver abajo) |
 | `extras` | texto JSON | Los datos de una acción `call:` |
