@@ -34,7 +34,6 @@ class MainActivity : Activity() {
     private lateinit var burbuja: Switch
     private lateinit var contactos: Switch
     private lateinit var archivos: Switch
-    private lateinit var ventanas: Switch
     private lateinit var plugins: TextView
 
     private val d by lazy { resources.displayMetrics.density }
@@ -107,15 +106,6 @@ class MainActivity : Activity() {
             }
         }
 
-        ventanas = interruptor(
-            "Cambiar de app (w)",
-            "Como Window Walker de Flow: «w » lista las apps que usaste hace poco y «w chr» las filtra. " +
-                "La app en la que estabas va al final, así Intro te lleva a la anterior. " +
-                "Necesita «Acceso a datos de uso».",
-        ) { activa ->
-            if (activa != Ventanas.permitido(this)) Ventanas.pedirPermiso(this)
-        }
-
         seccion("Búsquedas web")
         texto(
             "Escribe la palabra clave y lo que buscas: «g gatos», «yt música», «wiki Lima», «map café».\n" +
@@ -147,7 +137,6 @@ class MainActivity : Activity() {
             checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
         // Volver de «Acceso a todos los archivos»: si se dio, a indexar.
         archivos.isChecked = Fuentes.puedeLeerArchivos(this)
-        ventanas.isChecked = Ventanas.permitido(this)
         App.fondo.execute {
             App.listo.await(3, TimeUnit.SECONDS)
             runCatching { Fuentes.indexarArchivos(this) }

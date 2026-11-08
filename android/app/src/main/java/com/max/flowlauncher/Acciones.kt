@@ -57,10 +57,6 @@ object Acciones {
             "archivo" -> archivo(c, resto)
             "compartir" -> compartir(c, resto)
             "pindesk" -> enviarAPinDesk(c, resto)
-            "ventanas" -> {
-                Ventanas.pedirPermiso(c)
-                true
-            }
             "abrircon" -> archivo(c, resto, elegir = true)
             else -> false
         }

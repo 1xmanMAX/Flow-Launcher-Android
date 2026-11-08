@@ -57,3 +57,7 @@ kotlin {
 
 // Sin dependencias: ni AndroidX ni corrutinas. Solo el SDK de Android y la
 // libreria estandar de Kotlin, para un APK pequeno y un arranque rapido.
+// (JUnit solo para las pruebas: no entra en el APK.)
+dependencies {
+    testImplementation("junit:junit:4.13.2")
+}

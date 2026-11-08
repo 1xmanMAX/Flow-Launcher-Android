@@ -65,7 +65,6 @@ paso "Instalacion"
 # Un archivo para buscar con «c», y permiso de acceso a todos los archivos.
 "$adb" shell 'mkdir -p /sdcard/Download/Universidad && echo hola > "/sdcard/Download/Universidad/Tesis final.pdf"'
 "$adb" shell appops set --uid com.max.flowlauncher MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 || true
-"$adb" shell appops set com.max.flowlauncher GET_USAGE_STATS allow >/dev/null 2>&1 || true
 "$adb" logcat -c
 libdir="$("$adb" shell dumpsys package $pkg | sed -n 's/.*legacyNativeLibraryDir=//p' | tr -d '\r' | head -1)"
 "$adb" shell ls -l "$libdir/x86_64/" | tee "$salida/nativelibs.txt"
@@ -114,6 +113,12 @@ consulta() {  # $1 = nombre, $2 = texto (espacios como %s), $3 = resultado esper
 consulta buscar-set "set" "Ajustes del sistema"
 consulta buscar-calc "2+2" "2+2 — toca para copiar"
 consulta buscar-tx "tx%shola" "HOLA"
+# Comandos con otras apps (sin plugins).
+consulta cmd-timer "timer%s10m" "Temporizador de 10 min"
+consulta cmd-wa "wa%s987654321%shola" "WhatsApp a 987654321"
+espera cmd-wa "Enviar «987654321 hola» por WhatsApp"
+consulta cmd-cal "cal%sreunion%smanana%s10:30" "Evento: reunion"
+consulta cmd-sugerir "tim" "Temporizador  ·  timer"
 consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 consulta buscar-pixpin "p%st%scomprar%span" "Apuntar «comprar pan» como tarea"
 consulta buscar-archivos "c%stesis" "Tesis final.pdf"
@@ -141,11 +146,6 @@ if [[ -f "$prueba_apk" ]]; then
   no_espera prov-tesis "en PixPin"
   consulta prov-tarea "p%st%span" "Apuntar «pan» en Inbox"
   no_espera prov-tarea "como tarea"
-  # «w»: cambiar de app. Usar la app de prueba un momento y volver: tiene que salir.
-  "$adb" shell am start -W -n com.max.flowlauncher.prueba/.Principal >/dev/null; sleep 5
-  "$adb" shell input keyevent KEYCODE_HOME; sleep 2
-  "$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 4
-  consulta buscar-ventanas "w%s" "Proveedor de prueba"
   "$adb" shell am force-stop $pkg
 else
   echo "(sin $prueba_apk: se salta)"

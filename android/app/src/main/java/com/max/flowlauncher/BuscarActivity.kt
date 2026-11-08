@@ -206,13 +206,19 @@ class BuscarActivity : Activity() {
         locales = Resultado.lista(r.optJSONArray("r"))
         mostrarLocales?.let { App.principal.removeCallbacks(it) }
         verCargando?.let { App.principal.removeCallbacks(it) }
+        // `wa ana hola`, `timer 10m`...: un comando manda solo, y al instante.
+        Comandos.consulta(this, q)?.let { cmd ->
+            cargando.visibility = View.INVISIBLE
+            mostrar(cmd)
+            return
+        }
+        Comandos.sugerencias(this, q).takeIf { it.isNotEmpty() }?.let { s ->
+            locales = (locales + s).sortedByDescending { it.puntos }
+        }
         val proveedores = Proveedores.destinos(q).takeIf { it.isNotEmpty() }
         // `p tesis`: la palabra clave es de la app; lo local no pinta nada.
         if (proveedores?.any { !it.global } == true) locales = emptyList()
-        // `w chrome`: cambiar de app (Ventanas), tambien solo.
-        val ventanas = Ventanas.filtro(q)
-        if (ventanas != null) locales = emptyList()
-        if (!r.optBoolean("p") && proveedores == null && ventanas == null) {
+        if (!r.optBoolean("p") && proveedores == null) {
             cargando.visibility = View.INVISIBLE
             mostrar(locales)
             return
@@ -237,8 +243,7 @@ class BuscarActivity : Activity() {
             val dePlugins = if (!hayPlugins) emptyList() else runCatching {
                 Resultado.lista(JSONArray(Nucleo.consultarPlugins(q, 20, 1500)))
             }.getOrElse { emptyList() }
-            val deVentanas = ventanas?.let { Ventanas.buscar(applicationContext, it) } ?: emptyList()
-            val de = dePlugins + deVentanas + (runCatching { deApps?.get() }.getOrNull() ?: emptyList())
+            val de = dePlugins + (runCatching { deApps?.get() }.getOrNull() ?: emptyList())
             val ev = runCatching { JSONArray(Nucleo.eventos()) }.getOrElse { JSONArray() }
             App.principal.post {
                 if (cerrada || mio != turno) return@post

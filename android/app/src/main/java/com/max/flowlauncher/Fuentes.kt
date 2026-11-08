@@ -102,6 +102,30 @@ object Fuentes {
             Nucleo.CONTACTOS, titulos.toTypedArray(), numeros.toTypedArray(),
             acciones.toTypedArray(), vacios, vacios,
         )
+        // Lo de los comandos y lo de WhatsApp, Telegram, Signal...
+        Agenda.cargar(c)
+        cargarMensajeria(c)
+    }
+
+    /**
+     * Cada chat o llamada de WhatsApp, Telegram, Signal... que la app dejo en
+     * la agenda: buscar «ana» da tambien «Ana · WhatsApp» y lo abre directo.
+     */
+    private fun cargarMensajeria(c: Context) {
+        val filas = Agenda.mensajeria(c)
+        val pm = c.packageManager
+        val instaladas = filas.map { it.app }.distinct().filter {
+            runCatching { pm.getPackageInfo(it.paquete, 0); true }.getOrDefault(false)
+        }.toSet()
+        val l = filas.filter { it.app in instaladas }
+        Nucleo.cargar(
+            Nucleo.ATAJOS,
+            l.map { "${it.nombre} · ${it.app.nombre}" }.toTypedArray(),
+            l.map { it.que }.toTypedArray(),
+            l.map { intentUri(Agenda.intent(it)) }.toTypedArray(),
+            l.map { "pkg:${it.app.paquete}" }.toTypedArray(),
+            l.map { "${it.app.claves} ${it.que}" }.toTypedArray(),
+        )
     }
 
     /** Titulo, accion de Settings y palabras con que encontrarlo. */
