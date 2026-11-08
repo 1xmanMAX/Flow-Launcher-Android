@@ -1,6 +1,9 @@
 package com.max.flowlauncher
 
+import android.content.Context
 import android.graphics.Canvas
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
@@ -78,33 +81,110 @@ object Insignias {
     fun de(clave: String, densidad: Float): Drawable {
         val ext = extension(clave)
         return synchronized(cache) {
-            cache.getOrPut(ext) { Cuadro(ext.take(4), familia(ext), densidad) }
+            cache.getOrPut("ext:$ext") {
+                val f = familia(ext)
+                Baldosa(f.color, densidad, rotulo = ext.take(4), textoOscuro = f.textoOscuro)
+            }
         }
     }
 
-    /** Como el de PixPin: esquinas redondeadas y la extension en minusculas. */
-    private class Cuadro(val rotulo: String, f: Familia, d: Float) : Drawable() {
-        private val fondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF000000.toInt() or f.color }
-        private val letra = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = if (f.textoOscuro) 0xFF222222.toInt() else 0xFFFFFFFF.toInt()
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textAlign = Paint.Align.CENTER
+    /**
+     * Las funciones: el mismo cuadrado que los archivos, con su color y el
+     * simbolo en blanco. Asi todo lo que no es una app se ve de una familia.
+     */
+    private class Funcion(val icono: Int, val color: Int)
+
+    private val funciones = mapOf(
+        "web" to Funcion(R.drawable.ic_web, 0x2F7BF5),
+        "calc" to Funcion(R.drawable.ic_calc, 0xF2711C),
+        "ajustes" to Funcion(R.drawable.ic_ajustes, 0x5F6B7A),
+        "contactos" to Funcion(R.drawable.ic_contacto, 0x2E9E4F),
+        "archivos" to Funcion(R.drawable.ic_carpeta, 0xE8A317),
+        "carpeta" to Funcion(R.drawable.ic_carpeta, 0xE8A317),
+        "plugin" to Funcion(R.drawable.ic_plugin, 0x7048E8),
+        "buscar" to Funcion(R.drawable.ic_buscar, 0x495057),
+        "ic_compartir" to Funcion(R.drawable.ic_compartir, 0x1098AD),
+        "ic_abrir_con" to Funcion(R.drawable.ic_abrir_con, 0x5B3CC4),
+        "ic_copiar" to Funcion(R.drawable.ic_copiar, 0x6C757D),
+        "ic_carpeta" to Funcion(R.drawable.ic_carpeta, 0xE8A317),
+    )
+
+    /** `web`, `calc`, `ic_compartir`... o null si no es una de las nuestras. */
+    fun funcion(c: Context, nombre: String): Drawable? {
+        val f = funciones[nombre] ?: return null
+        return synchronized(cache) {
+            cache.getOrPut("fn:$nombre") {
+                val simbolo = c.getDrawable(f.icono)?.mutate()?.apply { setTint(0xFFFFFFFF.toInt()) }
+                Baldosa(f.color, c.resources.displayMetrics.density, simbolo = simbolo)
+            }
         }
-        private val radio = 7 * d
+    }
+
+    /**
+     * Un cuadrado de esquinas redondeadas (casi un «squircle», como los iconos
+     * de iOS y Raycast) con un brillo suave arriba, y dentro la extension o un
+     * simbolo. Mismo tamano y forma para todo: la lista se ve ordenada.
+     */
+    private class Baldosa(
+        color: Int,
+        d: Float,
+        val rotulo: String = "",
+        textoOscuro: Boolean = false,
+        val simbolo: Drawable? = null,
+    ) : Drawable() {
+        private val base = 0xFF000000.toInt() or color
+        private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = 1f * d
+            this.color = 0x1F000000
+        }
+        private val letra = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            this.color = if (textoOscuro) 0xE6000000.toInt() else 0xFFFFFFFF.toInt()
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            textAlign = Paint.Align.CENTER
+            letterSpacing = 0.02f
+        }
         private val lado = (36 * d).toInt()
         private val caja = RectF()
+        private var degradadoPara = -1
+
+        /** Un poco mas claro arriba y un poco mas oscuro abajo: con volumen, sin brillos falsos. */
+        private fun degradado(alto: Float, top: Float) {
+            val clave = (alto.toInt() shl 16) xor top.toInt()
+            if (clave == degradadoPara) return
+            degradadoPara = clave
+            fondo.shader = LinearGradient(
+                0f, top, 0f, top + alto,
+                mezclar(base, 0xFFFFFFFF.toInt(), 0.14f), mezclar(base, 0xFF000000.toInt(), 0.10f),
+                Shader.TileMode.CLAMP,
+            )
+        }
 
         override fun draw(c: Canvas) {
             val b = bounds
-            // Un poco mas alto que ancho, como una hoja.
-            val ancho = b.width() * 0.82f
-            caja.set(b.exactCenterX() - ancho / 2, b.top.toFloat(), b.exactCenterX() + ancho / 2, b.bottom.toFloat())
+            val l = minOf(b.width(), b.height()).toFloat()
+            // Cuadrado, centrado en lo que le den.
+            caja.set(b.exactCenterX() - l / 2, b.exactCenterY() - l / 2, b.exactCenterX() + l / 2, b.exactCenterY() + l / 2)
+            val radio = l * 0.26f
+            degradado(l, caja.top)
             c.drawRoundRect(caja, radio, radio, fondo)
+            val m = borde.strokeWidth / 2
+            caja.inset(m, m)
+            c.drawRoundRect(caja, radio - m, radio - m, borde)
+            caja.inset(-m, -m)
+            val s = simbolo
+            if (s != null) {
+                val t = (l * 0.24f).toInt()
+                s.setBounds(caja.left.toInt() + t, caja.top.toInt() + t, caja.right.toInt() - t, caja.bottom.toInt() - t)
+                s.draw(c)
+                return
+            }
             if (rotulo.isEmpty()) return
-            letra.textSize = ancho * when (rotulo.length) {
-                1, 2 -> 0.42f
-                3 -> 0.36f
-                else -> 0.29f
+            letra.textSize = l * when (rotulo.length) {
+                1, 2 -> 0.38f
+                3 -> 0.31f
+                else -> 0.25f
             }
             val y = caja.centerY() - (letra.descent() + letra.ascent()) / 2
             c.drawText(rotulo, caja.centerX(), y, letra)
@@ -115,8 +195,14 @@ object Insignias {
         override fun setAlpha(a: Int) {
             fondo.alpha = a
             letra.alpha = a
+            simbolo?.alpha = a
         }
         override fun setColorFilter(cf: ColorFilter?) {}
         @Deprecated("Drawable") override fun getOpacity() = PixelFormat.TRANSLUCENT
+
+        private fun mezclar(a: Int, b: Int, t: Float): Int {
+            fun canal(s: Int) = (((a shr s) and 0xFF) * (1 - t) + ((b shr s) and 0xFF) * t).toInt() shl s
+            return (0xFF shl 24) or canal(16) or canal(8) or canal(0)
+        }
     }
 }

@@ -26,30 +26,32 @@ object Iconos {
         else -> R.drawable.ic_buscar
     }
 
+    /** La baldosa que toca a cada fuente cuando no trae icono. */
+    private fun nombreDeFuente(fuente: String) = when {
+        fuente.startsWith("plugin:") -> "plugin"
+        fuente in setOf("web", "calc", "ajustes", "contactos", "archivos") -> fuente
+        else -> "buscar"
+    }
+
     fun poner(v: ImageView, r: Resultado) {
         val clave = r.icono.ifEmpty { "def:${r.fuente}" }
         // La misma fila con el mismo icono (lo normal al teclear): no tocar
         // nada. Volver a ponerlo, o pasar por el de por defecto, parpadea.
         if (v.tag == clave && v.drawable != null) return
         v.tag = clave
-        // Un icono propio por nombre (`res:ic_compartir`), para los menus.
-        if (clave.startsWith("res:")) {
-            val id = v.resources.getIdentifier(clave.substring(4), "drawable", v.context.packageName)
-            if (id != 0) {
-                v.setImageResource(id)
-                return
-            }
+        // Las funciones (web, calculadora, compartir, copiar...) y los
+        // archivos: baldosas cuadradas dibujadas, todas de la misma familia.
+        val funcion = when {
+            clave.startsWith("res:") -> clave.substring(4)
+            clave.startsWith("def:") -> nombreDeFuente(r.fuente)
+            clave == "carpeta" -> "carpeta"
+            else -> null
         }
-        if (clave.startsWith("def:")) {
-            v.setImageResource(porDefecto(r.fuente))
+        if (funcion != null) {
+            val d = Insignias.funcion(v.context, funcion)
+            if (d != null) v.setImageDrawable(d) else v.setImageResource(porDefecto(r.fuente))
             return
         }
-        // Una carpeta del movil (resultados de `c`).
-        if (clave == "carpeta") {
-            v.setImageResource(R.drawable.ic_carpeta)
-            return
-        }
-        // El cuadro de color de una extension: se dibuja, no se carga.
         if (clave.startsWith("ext:")) {
             v.setImageDrawable(Insignias.de(clave, v.resources.displayMetrics.density))
             return
@@ -59,7 +61,9 @@ object Iconos {
             v.setImageDrawable(hay)
             return
         }
-        v.setImageResource(porDefecto(r.fuente))
+        // Mientras carga, su baldosa (la de la fuente).
+        Insignias.funcion(v.context, nombreDeFuente(r.fuente))?.let(v::setImageDrawable)
+            ?: v.setImageResource(porDefecto(r.fuente))
         val c = v.context.applicationContext
         val lado = v.layoutParams?.width?.takeIf { it > 0 } ?: 96
         hilo.execute {
