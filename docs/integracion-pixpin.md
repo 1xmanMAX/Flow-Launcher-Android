@@ -22,7 +22,23 @@ Regla para rutas nuevas: los mismos nombres de campo que el pedido del PC
 de la seña. Un dato que falta = lo mismo que en el PC (sin `proyecto` =
 «Mensajes guardados»).
 
-## Lo que ya está (rama `claude/proveedor-flow-buscador` de PIXPIN_PRO_ANDROID)
+## Estado (8-nov-2026): en PinDesk desde la v0.185.0
+
+La rama `claude/proveedor-flow-buscador` ya está en `main` de PIXPIN_PRO_ANDROID (PinDesk 0.185.0, edición completa
+y restringida). Con ella, PinDesk sigue el contrato v2 entero (`call:`, `menu`, `consulta:`), con la gramática y los
+pedidos del complemento del PC: tareas completas (apuntar en una lista, marcar, quitar, mover), `@proyecto`,
+escribir al chat sin abrir nada, notas, lienzos, grabar con nombre, lecciones y repasar, capturas y pinear la última.
+El manual de uso está en `docs/flow-buscador.md` de PIXPIN_PRO_ANDROID.
+
+**Flow Buscador reemplaza al buscador de PinDesk fuera de la app**: si Flow está instalado, «Buscar en PinDesk»
+(`pindesk://atajo/buscar`) abre `BuscarActivity` de Flow con el extra `consulta = "p <texto>"`, y PinDesk vacía y
+deja de llenar el índice del buscador del teléfono (AppSearch). En la edición restringida de PinDesk es la función
+`flow` del catálogo (se abre en el panel del servidor); mientras está cerrada, el proveedor no devuelve filas.
+
+Lo de PinDesk que aún no hace el lanzador (ver «Lo del PC que aquí no está» en `docs/flow-buscador.md`): pegar
+imágenes del portapapeles (`[img 01]`), conservar o borrar capturas, y el reproductor flotante de audio.
+
+## Lo que ya estaba (rama `claude/proveedor-flow-buscador` de PIXPIN_PRO_ANDROID)
 
 | PC | Android |
 |---|---|
