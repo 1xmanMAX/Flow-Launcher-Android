@@ -81,7 +81,10 @@ espera() {  # $1 = nombre, $2 = texto esperado
 paso "MainActivity (arranque en frio)"
 "$adb" shell am start -W -n $pkg/.MainActivity | tee "$salida/start-main.txt"
 sleep 4; volcar main
-espera main "Flow Buscador"; espera main "Listo"
+espera main "Flow Buscador"
+# La lista de plugins queda abajo: bajar hasta el final.
+for _ in 1 2 3; do "$adb" shell input swipe 500 1600 500 300 200; done; sleep 2
+volcar main-abajo; espera main-abajo "Listo"
 
 paso "BuscarActivity (arranque en frio) y consultas"
 "$adb" shell am force-stop $pkg
