@@ -60,6 +60,9 @@ paso "Instalacion"
 "$adb" install -r "$apk"
 # Datos limpios: que no quede nada de una prueba anterior (la burbuja activa...).
 "$adb" shell pm clear com.max.flowlauncher >/dev/null
+# Un archivo para buscar con «c», y permiso de acceso a todos los archivos.
+"$adb" shell 'mkdir -p /sdcard/Download/Universidad && echo hola > "/sdcard/Download/Universidad/Tesis final.pdf"'
+"$adb" shell appops set --uid com.max.flowlauncher MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 || true
 "$adb" logcat -c
 libdir="$("$adb" shell dumpsys package $pkg | sed -n 's/.*legacyNativeLibraryDir=//p' | tr -d '\r' | head -1)"
 "$adb" shell ls -l "$libdir/x86_64/" | tee "$salida/nativelibs.txt"
@@ -95,6 +98,7 @@ consulta buscar-calc "2+2" "2+2 — toca para copiar"
 consulta buscar-tx "tx%shola" "HOLA"
 consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 consulta buscar-pixpin "p%st%scomprar%span" "Apuntar «comprar pan» como tarea"
+consulta buscar-archivos "c%stesis" "Tesis final.pdf"
 espera buscar-tx "aG9sYQ=="
 "$adb" shell "ps -A -o PID,PPID,NAME | grep -E 'flowlauncher|flow-texto'" | tee "$salida/procesos.txt"
 grep -q libflow-texto.so "$salida/procesos.txt" || falla "no hay proceso del plugin"
