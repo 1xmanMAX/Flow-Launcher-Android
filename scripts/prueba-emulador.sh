@@ -60,6 +60,8 @@ paso "Instalacion"
 "$adb" install -r "$apk"
 # Datos limpios: que no quede nada de una prueba anterior (la burbuja activa...).
 "$adb" shell pm clear com.max.flowlauncher >/dev/null
+# Sin el proveedor de prueba de otra vuelta (se le cederia la palabra p).
+"$adb" uninstall com.max.flowlauncher.prueba >/dev/null 2>&1 || true
 # Un archivo para buscar con «c», y permiso de acceso a todos los archivos.
 "$adb" shell 'mkdir -p /sdcard/Download/Universidad && echo hola > "/sdcard/Download/Universidad/Tesis final.pdf"'
 "$adb" shell appops set --uid com.max.flowlauncher MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 || true
