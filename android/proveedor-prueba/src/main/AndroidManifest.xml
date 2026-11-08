@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:label="Proveedor de prueba">
+        <provider
+            android:name=".Proveedor"
+            android:authorities="com.max.flowlauncher.prueba"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.max.flowlauncher.PROVEEDOR" />
+            </intent-filter>
+            <meta-data android:name="com.max.flowlauncher.palabra" android:value="p" />
+            <meta-data android:name="com.max.flowlauncher.nombre" android:value="Prueba" />
+        </provider>
+    </application>
+</manifest>

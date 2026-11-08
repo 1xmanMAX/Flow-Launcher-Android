@@ -25,6 +25,7 @@ import android.widget.ImageView
 import android.widget.ListView
 import android.widget.ProgressBar
 import android.widget.TextView
+import android.widget.Toast
 import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
@@ -180,6 +181,8 @@ class BuscarActivity : Activity() {
         mostrarLocales?.let { App.principal.removeCallbacks(it) }
         verCargando?.let { App.principal.removeCallbacks(it) }
         val proveedores = Proveedores.destinos(q).takeIf { it.isNotEmpty() }
+        // `p tesis`: la palabra clave es de la app; lo local no pinta nada.
+        if (proveedores?.any { !it.global } == true) locales = emptyList()
         if (!r.optBoolean("p") && proveedores == null) {
             cargando.visibility = View.INVISIBLE
             mostrar(locales)
@@ -256,11 +259,40 @@ class BuscarActivity : Activity() {
             }
             return
         }
+        // Una accion de una app proveedora (apuntar una tarea en PixPin...):
+        // la hace ella, sin abrirse.
+        if (r.accion.startsWith(Proveedores.LLAMAR)) {
+            val mio = turno
+            hiloPlugins.execute {
+                val res = Proveedores.llamar(applicationContext, r)
+                App.principal.post {
+                    if (cerrada) return@post
+                    (res.error ?: res.mensaje)?.let { Toast.makeText(applicationContext, it, Toast.LENGTH_SHORT).show() }
+                    res.abrir?.let { Acciones.ejecutar(this, "url:$it", ::cambiarConsulta) }
+                    when {
+                        res.consulta != null && mio == turno -> cambiarConsulta(res.consulta)
+                        res.cerrar -> finish()
+                    }
+                }
+            }
+            return
+        }
         if (Acciones.ejecutar(this, r.accion, ::cambiarConsulta)) finish()
     }
 
     /** Menu del plugin, copiar, o la ficha de la app. */
     private fun pulsacionLarga(r: Resultado) {
+        // El menu de una fila de una app proveedora.
+        if (r.fuente.startsWith("proveedor:") && r.contexto != null) {
+            val mio = ++turno
+            hiloPlugins.execute {
+                val menu = Proveedores.menu(applicationContext, r)
+                App.principal.post {
+                    if (!cerrada && mio == turno && menu.isNotEmpty()) mostrar(menu)
+                }
+            }
+            return
+        }
         val id = r.pluginId
         val cx = r.contexto
         if (id != null && cx != null) {

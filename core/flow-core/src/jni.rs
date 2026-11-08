@@ -267,3 +267,15 @@ pub extern "system" fn Java_com_max_flowlauncher_Nucleo_estado(mut env: JNIEnv, 
     });
     devolver(&mut env, &r.to_string())
 }
+
+/// `cederPalabras(["p"])`: palabras clave de las que se encargan apps
+/// proveedoras; los plugins con esas palabras dejan de usarse.
+#[no_mangle]
+pub extern "system" fn Java_com_max_flowlauncher_Nucleo_cederPalabras(mut env: JNIEnv, _c: JClass, palabras: JObjectArray) {
+    let p = lista(&mut env, &palabras);
+    seguro((), || {
+        if let Some(m) = motor() {
+            m.host.ceder(p);
+        }
+    });
+}

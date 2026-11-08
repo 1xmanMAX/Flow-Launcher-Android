@@ -168,3 +168,14 @@ fn un_plugin_colgado_se_relanza_y_no_bloquea() {
     let arranques = std::fs::read_to_string(&cuenta).unwrap().lines().count();
     assert!(arranques >= 2, "se relanzo {arranques} veces");
 }
+
+#[test]
+fn una_palabra_cedida_a_una_app_apaga_el_plugin() {
+    let (m, _) = motor("cedida");
+    assert!(m.consultar("t2 hola", 10).plugins);
+    m.host.ceder(vec!["T2".into()]);
+    assert!(!m.consultar("t2 hola", 10).plugins);
+    assert!(m.consultar_plugins("t2 hola", 10, Duration::from_secs(2)).is_empty());
+    // Los demas siguen.
+    assert!(m.consultar("t1 hola", 10).plugins);
+}

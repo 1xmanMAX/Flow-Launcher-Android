@@ -160,7 +160,7 @@ impl Motor {
             }
         }
         for p in self.host.lista() {
-            if !p.compatible() || p.m.desactivado {
+            if !self.host.usable(&p) {
                 continue;
             }
             if let Some(k) = p.m.palabras.iter().find(|k| *k != "*") {

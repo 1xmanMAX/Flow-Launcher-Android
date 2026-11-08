@@ -77,6 +77,9 @@ volcar() {  # $1 = nombre; deja $salida/$1.xml, $1.png y el texto visible en $1.
 espera() {  # $1 = nombre, $2 = texto esperado
   grep -qF -- "$2" "$salida/$1.txt" && echo "OK  $1: «$2»" || falla "$1: no aparece «$2»"
 }
+no_espera() {  # $1 = nombre, $2 = texto que NO debe salir
+  grep -qF -- "$2" "$salida/$1.txt" && falla "$1: no deberia salir «$2»" || echo "OK  $1: sin «$2»"
+}
 
 paso "MainActivity (arranque en frio)"
 "$adb" shell am start -W -n $pkg/.MainActivity | tee "$salida/start-main.txt"
@@ -105,6 +108,24 @@ consulta buscar-archivos "c%stesis" "Tesis final.pdf"
 espera buscar-tx "aG9sYQ=="
 "$adb" shell "ps -A -o PID,PPID,NAME | grep -E 'flowlauncher|flow-texto'" | tee "$salida/procesos.txt"
 grep -q libflow-texto.so "$salida/procesos.txt" || falla "no hay proceso del plugin"
+
+paso "Proveedor de busqueda (app de prueba con la palabra p)"
+prueba_apk="${PROVEEDOR:-$raiz/android/proveedor-prueba/build/outputs/apk/debug/proveedor-prueba-debug.apk}"
+if [[ -f "$prueba_apk" ]]; then
+  "$adb" install -r "$prueba_apk" >/dev/null
+  # El buscador lee los proveedores al arrancar el proceso.
+  "$adb" shell am force-stop $pkg; sleep 1
+  "$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 6
+  consulta prov-tesis "p%stes" "Tesis final.pdf"
+  espera prov-tesis "Tesis borrador.docx"
+  # Lo generico del plugin de reserva ya no sale: el proveedor manda.
+  no_espera prov-tesis "en PixPin"
+  consulta prov-tarea "p%st%span" "Apuntar «pan» en Inbox"
+  no_espera prov-tarea "como tarea"
+  "$adb" shell am force-stop $pkg
+else
+  echo "(sin $prueba_apk: se salta)"
+fi
 
 paso "Burbuja"
 "$adb" shell appops set $pkg SYSTEM_ALERT_WINDOW allow

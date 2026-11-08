@@ -62,6 +62,18 @@ object Iconos {
     }
 
     private fun cargar(c: Context, clave: String, lado: Int): Drawable? {
+        // Un icono de otra app: `android.resource://<paquete>/drawable/<nombre>`.
+        if (clave.startsWith("android.resource://")) {
+            val u = android.net.Uri.parse(clave)
+            val paquete = u.authority ?: return null
+            val res = c.packageManager.getResourcesForApplication(paquete)
+            val seg = u.pathSegments
+            val id = if (seg.size == 1) seg[0].toIntOrNull() ?: 0
+            else res.getIdentifier(seg.getOrNull(1) ?: return null, seg[0], paquete)
+            if (id == 0) return null
+            @Suppress("DEPRECATION")
+            return res.getDrawable(id)
+        }
         if (clave.startsWith("pkg:")) {
             return c.packageManager.getApplicationIcon(clave.substring(4))
         }

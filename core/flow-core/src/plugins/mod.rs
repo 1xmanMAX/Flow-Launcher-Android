@@ -312,6 +312,9 @@ pub struct Host {
     pub eventos: Eventos,
     dir_libs: Option<PathBuf>,
     dir_ajustes: PathBuf,
+    /// Palabras clave de las que se encarga una app proveedora (PixPin con
+    /// `p`): los plugins con esa palabra no se usan, para no duplicar.
+    cedidas: RwLock<Vec<String>>,
 }
 
 /// A que plugins va una consulta y con que.
@@ -386,7 +389,7 @@ impl Host {
     /// ninguno, la consulta entera va a los globales (`*`).
     pub fn destinos(&self, crudo: &str) -> Vec<Destino> {
         let crudo = crudo.trim_start();
-        let activos: Vec<Arc<Plugin>> = self.lista().into_iter().filter(|p| p.compatible() && !p.m.desactivado).collect();
+        let activos: Vec<Arc<Plugin>> = self.lista().into_iter().filter(|p| self.usable(p)).collect();
         // La palabra clave solo cuenta seguida de un espacio (`p `), como en Flow.
         let (primera, resto) = crudo.split_once(' ').unwrap_or(("", ""));
         let mut d: Vec<Destino> = activos
@@ -406,8 +409,24 @@ impl Host {
         d
     }
 
+    /// Las palabras de las que se encarga una app proveedora.
+    pub fn ceder(&self, palabras: Vec<String>) {
+        if let Ok(mut c) = self.cedidas.write() {
+            *c = palabras.into_iter().map(|p| p.trim().to_lowercase()).filter(|p| !p.is_empty() && p != "*").collect();
+        }
+    }
+
+    /// Compatible, activo y sin ninguna palabra cedida a una app.
+    pub fn usable(&self, p: &Plugin) -> bool {
+        if !p.compatible() || p.m.desactivado {
+            return false;
+        }
+        let Ok(c) = self.cedidas.read() else { return true };
+        !p.m.palabras.iter().any(|k| c.iter().any(|x| x.eq_ignore_ascii_case(k)))
+    }
+
     pub fn tiene_palabra(&self, primera: &str) -> bool {
-        self.lista().iter().any(|p| p.compatible() && p.m.palabras.iter().any(|k| k != "*" && k.eq_ignore_ascii_case(primera)))
+        self.lista().iter().any(|p| self.usable(p) && p.m.palabras.iter().any(|k| k != "*" && k.eq_ignore_ascii_case(primera)))
     }
 
     /// Pregunta a todos los destinos a la vez. Ninguno espera mas de

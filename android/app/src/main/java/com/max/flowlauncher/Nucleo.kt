@@ -44,6 +44,9 @@ object Nucleo {
 
     external fun importarBusquedas(json: String): String
 
+    /** Palabras clave de las que se encargan apps proveedoras: sus plugins se apagan. */
+    external fun cederPalabras(palabras: Array<String>)
+
     /**
      * Indexa los archivos de `raiz` (para `c <nombre>`) en un hilo del
      * nucleo. Vuelve enseguida; si el indice es reciente, no hace nada.
