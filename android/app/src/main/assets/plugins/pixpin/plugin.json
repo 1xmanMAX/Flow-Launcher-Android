@@ -1,0 +1,13 @@
+{
+  "$schema": "https://www.flowlauncher.com/schemas/plugin.schema.json",
+  "ID": "8ABF9A87927D461EA54F3F6082337EF2",
+  "ActionKeywords": ["p"],
+  "Name": "PixPin Max",
+  "Description": "Buscar en PixPin, escribir en el chat, apuntar tareas, notas, grabar, capturar y lecciones sin salir del buscador",
+  "Author": "Max Anthony Mamani Maquera",
+  "Version": "0.1.0",
+  "Language": "Executable_V2",
+  "Website": "https://github.com/1xmanMAX/PIXPIN_PRO_PLUGIN_FLOWLAUNCHER",
+  "IcoPath": "Images\\pixpin.png",
+  "ExecuteFileName": "pixpin-lanzador.exe"
+}

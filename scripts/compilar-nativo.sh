@@ -14,7 +14,7 @@ set -euo pipefail
 raiz="$(cd "$(dirname "$0")/.." && pwd)"
 salida="$raiz/android/app/src/main/jniLibs"
 abis="${ABIS:-arm64-v8a armeabi-v7a x86_64}"
-plugins=(flow-texto)
+plugins=(flow-texto pixpin-lanzador)
 
 if [[ -z "${ANDROID_NDK_HOME:-}" && -n "${ANDROID_HOME:-}" ]]; then
   ANDROID_NDK_HOME="$(ls -d "$ANDROID_HOME"/ndk/* 2>/dev/null | sort -V | tail -1)"

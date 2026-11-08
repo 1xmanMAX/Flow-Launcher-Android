@@ -1,5 +1,5 @@
 [workspace]
-members = ["flow-core", "plugins/texto"]
+members = ["flow-core", "plugins/texto", "plugins/pixpin"]
 resolver = "2"
 
 [workspace.package]

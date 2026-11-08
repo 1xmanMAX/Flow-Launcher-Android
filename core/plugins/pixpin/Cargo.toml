@@ -1,0 +1,13 @@
+[package]
+name = "pixpin-lanzador"
+description = "PixPin Max en el buscador de Android: el plugin de Flow de Windows, portado a las senas pindesk://"
+edition.workspace = true
+version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pixpin-lanzador"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
