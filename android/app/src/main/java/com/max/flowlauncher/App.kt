@@ -1,11 +1,13 @@
 package com.max.flowlauncher
 
+import android.app.Activity
 import android.app.Application
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -87,6 +89,23 @@ class App : Application() {
             runCatching { Fuentes.cargarTodo(this) }.onFailure { Log.e("Flow", "Fuentes", it) }
             runCatching { Proveedores.cargar(this) }
         }
+        // Al abrir el buscador, los archivos al dia (el nucleo decide si hace
+        // falta: casi siempre no hace nada).
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(a: Activity, b: Bundle?) {
+                if (a !is BuscarActivity) return
+                fondo.execute {
+                    listo.await(3, TimeUnit.SECONDS)
+                    runCatching { Fuentes.indexarArchivos(a.applicationContext) }
+                }
+            }
+            override fun onActivityStarted(a: Activity) {}
+            override fun onActivityResumed(a: Activity) {}
+            override fun onActivityPaused(a: Activity) {}
+            override fun onActivityStopped(a: Activity) {}
+            override fun onActivitySaveInstanceState(a: Activity, b: Bundle) {}
+            override fun onActivityDestroyed(a: Activity) {}
+        })
         // Apps instaladas o quitadas: releerlas.
         val filtro = IntentFilter().apply {
             addAction(Intent.ACTION_PACKAGE_ADDED)

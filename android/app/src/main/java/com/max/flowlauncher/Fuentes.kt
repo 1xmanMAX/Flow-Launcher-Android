@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
 import android.provider.ContactsContract
 import android.provider.Settings
 
@@ -18,6 +20,28 @@ object Fuentes {
         cargarApps(c)
         cargarAjustes(c)
         cargarContactos(c)
+        indexarArchivos(c)
+    }
+
+    /**
+     * Si se pueden leer todos los archivos: en Android 11+ es el permiso
+     * especial «Acceso a todos los archivos»; antes, el de almacenamiento.
+     */
+    fun puedeLeerArchivos(c: Context): Boolean =
+        if (Build.VERSION.SDK_INT >= 30) {
+            Environment.isExternalStorageManager()
+        } else {
+            c.checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+
+    /**
+     * Los archivos del movil (`c <nombre>`). Barato: el nucleo los recorre
+     * en su propio hilo y solo si el indice es viejo.
+     */
+    fun indexarArchivos(c: Context) {
+        if (!puedeLeerArchivos(c)) return
+        val raiz = runCatching { Environment.getExternalStorageDirectory()?.path }.getOrNull() ?: return
+        Nucleo.indexarArchivos(raiz)
     }
 
     private fun intentUri(i: Intent) = "intent:" + i.toUri(Intent.URI_INTENT_SCHEME)

@@ -101,7 +101,7 @@ impl Elemento {
 }
 
 /// Un bit por letra o cifra (el resto comparte el ultimo).
-fn mascara(t: &[char]) -> u64 {
+pub(crate) fn mascara(t: &[char]) -> u64 {
     let mut m = 0u64;
     for &c in t {
         m |= match c {

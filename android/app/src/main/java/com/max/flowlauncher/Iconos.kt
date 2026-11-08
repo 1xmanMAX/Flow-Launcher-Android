@@ -21,6 +21,7 @@ object Iconos {
         fuente == "calc" -> R.drawable.ic_calc
         fuente == "ajustes" -> R.drawable.ic_ajustes
         fuente == "contactos" -> R.drawable.ic_contacto
+        fuente == "archivos" -> R.drawable.ic_carpeta
         fuente.startsWith("plugin:") -> R.drawable.ic_plugin
         else -> R.drawable.ic_buscar
     }
@@ -33,6 +34,11 @@ object Iconos {
         v.tag = clave
         if (clave.startsWith("def:")) {
             v.setImageResource(porDefecto(r.fuente))
+            return
+        }
+        // Una carpeta del movil (resultados de `c`).
+        if (clave == "carpeta") {
+            v.setImageResource(R.drawable.ic_carpeta)
             return
         }
         // El cuadro de color de una extension: se dibuja, no se carga.

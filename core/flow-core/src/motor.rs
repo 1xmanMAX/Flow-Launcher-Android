@@ -5,7 +5,10 @@
 //!    sugerencias de palabras clave). Sincrono, menos de un milisegundo.
 //! 2. [`Motor::consultar_plugins`]: lo de los plugins, en paralelo y con
 //!    limite de tiempo. La app lo llama en otro hilo y lo junta al llegar.
+//!    Tambien los archivos del movil (`c tesis`, ver [`crate::archivos`]):
+//!    pocos ms, pero nunca en el hilo de la interfaz.
 
+use crate::archivos::Archivos;
 use crate::busqueda_web::{self, Busqueda};
 use crate::calculadora;
 use crate::coincidir::puntuar;
@@ -24,8 +27,16 @@ pub struct Motor {
     historial: Mutex<Historial>,
     busquedas: RwLock<Vec<Busqueda>>,
     pub host: Host,
+    /// `c <nombre>`: los archivos del almacenamiento.
+    pub archivos: Archivos,
     dir: PathBuf,
 }
+
+/// La palabra clave de los archivos, como `c` en Everything.
+pub const PALABRA_ARCHIVOS: &str = "c";
+
+/// Lo que no cabe en los 20 de siempre: de archivos se ensenan hasta 30.
+const MAX_ARCHIVOS: usize = 30;
 
 pub struct Respuesta {
     pub resultados: Vec<Resultado>,
@@ -46,6 +57,7 @@ impl Motor {
             historial: Mutex::new(Historial::cargar(dir)),
             busquedas: RwLock::new(busquedas),
             host: Host::nuevo(dir.join("ajustes-plugins"), dir_libs),
+            archivos: Archivos::default(),
             dir: dir.to_path_buf(),
         }
     }
@@ -61,6 +73,10 @@ impl Motor {
         let (primera, resto) = texto.split_once(' ').unwrap_or((texto, ""));
         let tiene_espacio = texto.contains(' ');
 
+        // `c tesis`: solo archivos, y se buscan en el paso 2 (en otro hilo).
+        if self.consulta_archivos(texto).is_some() {
+            return Respuesta { resultados: Vec::new(), plugins: true };
+        }
         // `g gatos`: solo la busqueda web.
         if tiene_espacio {
             let b = self.busquedas.read().ok().and_then(|b| {
@@ -104,6 +120,12 @@ impl Motor {
         Respuesta { resultados: r, plugins }
     }
 
+    /// Lo escrito tras `c ` si es una busqueda de archivos (y estan activos).
+    fn consulta_archivos<'a>(&self, texto: &'a str) -> Option<&'a str> {
+        let (primera, resto) = texto.trim_start().split_once(' ')?;
+        (primera.eq_ignore_ascii_case(PALABRA_ARCHIVOS) && self.archivos.activo()).then_some(resto)
+    }
+
     /// Escribir `yo` sugiere `yt` (YouTube) y el nombre de cada plugin, para
     /// que se descubran sin leer el manual.
     fn sugerir_palabras(&self, texto: &str, r: &mut Vec<Resultado>) {
@@ -129,6 +151,9 @@ impl Motor {
                 ..Default::default()
             });
         };
+        if self.archivos.activo() {
+            sugerir("Archivos del móvil", PALABRA_ARCHIVOS, "archivos", "carpeta".into());
+        }
         if let Ok(b) = self.busquedas.read() {
             for b in b.iter().filter(|b| b.activa) {
                 sugerir(&b.titulo, &b.palabra, "web", String::new());
@@ -147,7 +172,14 @@ impl Motor {
 
     pub fn consultar_plugins(&self, texto: &str, max: usize, espera: Duration) -> Vec<Resultado> {
         let texto = recortar(texto);
-        let mut r = self.host.consultar(texto, espera);
+        let (mut r, max) = match self.consulta_archivos(texto) {
+            Some(q) => {
+                // Viejo: se rehace en otro hilo; esta vez, con el que hay.
+                self.archivos.refrescar();
+                (self.archivos.buscar(q, MAX_ARCHIVOS.max(max)), MAX_ARCHIVOS.max(max))
+            }
+            None => (self.host.consultar(texto, espera), max),
+        };
         // Lo elegido antes con esta consulta, primero (como en lo local).
         if let Ok(h) = self.historial.lock() {
             let q = normalizar::cadena(texto.trim());
@@ -200,6 +232,10 @@ impl Motor {
 
     pub fn elementos(&self) -> usize {
         self.indice.read().map(|i| i.len()).unwrap_or(0)
+    }
+
+    pub fn indexar_archivos(&self, raiz: &Path) {
+        self.archivos.indexar(raiz);
     }
 }
 
@@ -273,6 +309,34 @@ mod pruebas {
     fn calculadora_arriba() {
         let r = motor().consultar("12*3", 10).resultados;
         assert_eq!(r[0].accion, "copiar:36");
+    }
+
+    #[test]
+    fn archivos_con_c() {
+        let m = motor();
+        // Sin permiso (nunca se pidio indexar): `c x` es una consulta mas.
+        assert!(!m.consultar("c you", 10).resultados.is_empty());
+        assert!(!m.consultar("c", 10).resultados.iter().any(|x| x.fuente == "archivos"));
+
+        let raiz = m.dir.join("movil");
+        std::fs::create_dir_all(raiz.join("Download")).unwrap();
+        std::fs::write(raiz.join("Download/Tesis.pdf"), b"x").unwrap();
+        m.indexar_archivos(&raiz);
+        assert!(m.archivos.esperar(Duration::from_secs(10)));
+
+        let r = m.consultar("c tesis", 10);
+        assert!(r.plugins && r.resultados.is_empty());
+        // Con la mayuscula que pone el teclado, igual.
+        assert!(m.consultar("C tesis", 10).plugins);
+        let p = m.consultar_plugins("c tesis", 20, Duration::from_millis(100));
+        assert_eq!(p[0].titulo, "Tesis.pdf");
+        assert_eq!(p[0].subtitulo, "Descargas  ·  1 B");
+        assert!(p[0].accion.starts_with("archivo:/") && p[0].accion.ends_with("/Download/Tesis.pdf"));
+        // `c ` solo: lo ultimo modificado.
+        assert_eq!(m.consultar_plugins("c ", 20, Duration::from_millis(100))[0].titulo, "Tesis.pdf");
+        // `c` sin espacio: lo de siempre, con la sugerencia.
+        let r = m.consultar("c", 10);
+        assert!(r.resultados.iter().any(|x| x.accion == "consulta:c " && x.titulo.starts_with("Archivos del móvil")));
     }
 
     #[test]

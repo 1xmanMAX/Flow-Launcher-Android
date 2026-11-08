@@ -27,11 +27,13 @@ class MainActivity : Activity() {
         const val PEDIR_CONTACTOS = 1
         const val IMPORTAR = 2
         const val NOTIFICACIONES = 3
+        const val PEDIR_ARCHIVOS = 4
     }
 
     private lateinit var col: LinearLayout
     private lateinit var burbuja: Switch
     private lateinit var contactos: Switch
+    private lateinit var archivos: Switch
     private lateinit var plugins: TextView
 
     private val d by lazy { resources.displayMetrics.density }
@@ -88,6 +90,21 @@ class MainActivity : Activity() {
                 Acciones.abrir(this, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
             }
         }
+        archivos = interruptor(
+            "Archivos del móvil",
+            "Escribe «c» y el nombre: «c tesis», «c factura pdf». Busca en todo el almacenamiento, " +
+                "como Everything; «c » solo enseña lo último modificado. Tocar abre el archivo; " +
+                "mantener pulsado copia su ruta.",
+        ) { activa ->
+            if (activa && !Fuentes.puedeLeerArchivos(this)) {
+                pedirArchivos()
+            } else if (activa) {
+                App.fondo.execute { Fuentes.indexarArchivos(this) }
+            } else {
+                Toast.makeText(this, "Quita el permiso de archivos para desactivarlo", Toast.LENGTH_LONG).show()
+                abrirPermisoArchivos()
+            }
+        }
 
         seccion("Búsquedas web")
         texto(
@@ -118,8 +135,11 @@ class MainActivity : Activity() {
         if (BurbujaService.activa(this) && BurbujaService.puede(this)) BurbujaService.cambiar(this, true)
         contactos.isChecked =
             checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+        // Volver de «Acceso a todos los archivos»: si se dio, a indexar.
+        archivos.isChecked = Fuentes.puedeLeerArchivos(this)
         App.fondo.execute {
             App.listo.await(3, TimeUnit.SECONDS)
+            runCatching { Fuentes.indexarArchivos(this) }
             val e = runCatching { JSONObject(Nucleo.estado()) }.getOrElse { JSONObject() }
             App.principal.post { if (!isDestroyed) pintarPlugins(e) }
         }
@@ -139,6 +159,10 @@ class MainActivity : Activity() {
                 .append("\n\n")
         }
         sb.append("Elementos indexados: ").append(e.optInt("elementos"))
+        if (e.optInt("archivos") > 0 || e.optBoolean("indexando")) {
+            sb.append("\nArchivos indexados: ").append(e.optInt("archivos"))
+            if (e.optBoolean("indexando")) sb.append(" (indexando…)")
+        }
         plugins.text = sb.toString().trim()
     }
 
@@ -149,6 +173,31 @@ class MainActivity : Activity() {
             contactos.isChecked = si
             if (si) App.fondo.execute { Fuentes.cargarContactos(this) }
         }
+        if (codigo == PEDIR_ARCHIVOS) {
+            val si = r.firstOrNull() == PackageManager.PERMISSION_GRANTED
+            archivos.isChecked = si
+            if (si) App.fondo.execute { Fuentes.indexarArchivos(this) }
+        }
+    }
+
+    /** Android 11+: el permiso especial, en su pantalla; antes, el normal. */
+    private fun pedirArchivos() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            Toast.makeText(this, "Permite «Acceso a todos los archivos» y vuelve", Toast.LENGTH_LONG).show()
+            abrirPermisoArchivos()
+        } else {
+            requestPermissions(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), PEDIR_ARCHIVOS)
+        }
+    }
+
+    private fun abrirPermisoArchivos() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            val propia = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION, Uri.parse("package:$packageName"))
+            // Algunos moviles no tienen la pantalla de una sola app: la lista.
+            if (runCatching { startActivity(propia) }.isSuccess) return
+            if (Acciones.abrir(this, Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))) return
+        }
+        Acciones.abrir(this, Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
     }
 
     @Deprecated("API de Activity sin AndroidX")

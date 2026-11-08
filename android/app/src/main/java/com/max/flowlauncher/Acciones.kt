@@ -9,8 +9,12 @@ import android.content.Intent
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.DocumentsContract
 import android.widget.Toast
 import org.json.JSONArray
+import java.io.File
 
 /** Hacer lo que dice un resultado (ver `accion` en `resultado.rs`). */
 object Acciones {
@@ -50,8 +54,49 @@ object Acciones {
                 false
             }
             "interno" -> interno(c, resto)
+            "archivo" -> archivo(c, resto)
             else -> false
         }
+    }
+
+    /**
+     * Un archivo del movil (`c tesis`): con la app que le toque, por
+     * [ProveedorDeArchivos]. Las carpetas llegan acabadas en `/` (sin mirar
+     * el disco en este hilo).
+     */
+    private fun archivo(c: Context, ruta: String): Boolean {
+        if (ruta.endsWith("/")) return carpeta(c, ruta.trimEnd('/'))
+        val f = File(ruta)
+        val i = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(ProveedorDeArchivos.uri(c, f), ProveedorDeArchivos.tipo(f.name) ?: "*/*")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return abrir(c, i)
+    }
+
+    /**
+     * Una carpeta, en el gestor de archivos del sistema si se deja (no todos
+     * los moviles lo abren por fuera); si no, se copia la ruta.
+     */
+    private fun carpeta(c: Context, ruta: String): Boolean {
+        val raiz = Environment.getExternalStorageDirectory().path
+        if (ruta.startsWith("$raiz/")) {
+            val doc = "primary:" + ruta.removePrefix("$raiz/")
+            val uri = DocumentsContract.buildDocumentUri("com.android.externalstorage.documents", doc)
+            val i = Intent(Intent.ACTION_VIEW)
+                .setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            try {
+                c.startActivity(i)
+                return true
+            } catch (e: RuntimeException) {
+                // ActivityNotFoundException, SecurityException...: a copiar.
+            }
+        }
+        copiar(c, ruta)
+        if (Build.VERSION.SDK_INT >= 33) {
+            Toast.makeText(c, "No se puede abrir la carpeta: ruta copiada", Toast.LENGTH_SHORT).show()
+        }
+        return true
     }
 
     fun abrir(c: Context, i: Intent?): Boolean {
