@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# Prueba de humo del APK en un emulador Android sin aceleracion (sin /dev/kvm).
+#
+# Arranca un AVD x86_64 (imagen ATD de API 30) en modo headless, instala el
+# APK, abre MainActivity y BuscarActivity, escribe consultas y comprueba en el
+# volcado de UI que aparecen resultados (locales, calculadora y plugin "tx").
+# Activa la burbuja (permiso de superposicion + interruptor de la UI) y guarda
+# capturas y volcados en $SALIDA. Al terminar apaga el emulador.
+#
+# Uso: scripts/prueba-emulador.sh [ruta/al.apk]
+# Variables: ANDROID_HOME (/opt/android-sdk), SALIDA (/tmp/flow-prueba),
+#            GPU (swiftshader_indirect; la imagen ATD no admite "guest"),
+#            IMAGEN (system-images;android-30;aosp_atd;x86_64), AVD (flowtest)
+set -euo pipefail
+raiz="$(cd "$(dirname "$0")/.." && pwd)"
+apk="${1:-$raiz/android/app/build/outputs/apk/release/app-release.apk}"
+sdk="${ANDROID_HOME:-/opt/android-sdk}"
+export ANDROID_HOME="$sdk" ANDROID_SDK_ROOT="$sdk"
+salida="${SALIDA:-/tmp/flow-prueba}"
+gpu="${GPU:-swiftshader_indirect}"
+imagen="${IMAGEN:-system-images;android-30;aosp_atd;x86_64}"
+avd="${AVD:-flowtest}"
+pkg=com.max.flowlauncher
+adb="$sdk/platform-tools/adb"
+mkdir -p "$salida"
+
+paso() { printf '\n== %s\n' "$*"; }
+falla() { echo "FALLO: $*" >&2; fallos=$((fallos + 1)); }
+fallos=0
+
+paso "SDK: emulador e imagen"
+if [[ ! -x "$sdk/emulator/emulator" || ! -d "$sdk/${imagen//;//}" ]]; then
+  "$sdk/cmdline-tools/latest/bin/sdkmanager" --install emulator "$imagen" >/dev/null < <(yes)
+fi
+avds="$("$sdk/emulator/emulator" -list-avds 2>/dev/null || true)"
+if ! grep -qx "$avd" <<<"$avds"; then
+  echo no | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd -n "$avd" -k "$imagen" -d pixel_4 --force >/dev/null
+  cfg="$HOME/.android/avd/$avd.avd/config.ini"
+  sed -i -e 's/^hw.ramSize=.*/hw.ramSize=3072/' -e 's/^hw.cpu.ncore=.*/hw.cpu.ncore=4/' \
+         -e 's/^disk.dataPartition.size=.*/disk.dataPartition.size=2G/' "$cfg"
+fi
+
+paso "Arranque headless (sin KVM: ~5 min)"
+"$sdk/emulator/emulator" -avd "$avd" -no-window -no-audio -no-boot-anim -accel off \
+  -gpu "$gpu" -no-snapshot -no-metrics >"$salida/emulator.log" 2>&1 &
+trap '"$adb" emu kill >/dev/null 2>&1 || true' EXIT
+t0=$(date +%s)
+until [[ "$("$adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; do
+  (( $(date +%s) - t0 > 1500 )) && { echo "El emulador no arranco en 25 min"; exit 1; }
+  sleep 10
+done
+echo "Arrancado en $(( $(date +%s) - t0 )) s"
+"$adb" root >/dev/null; sleep 3; "$adb" wait-for-device
+"$adb" shell svc power stayon true
+"$adb" shell settings put system screen_off_timeout 2147483647
+"$adb" shell input keyevent KEYCODE_WAKEUP; "$adb" shell wm dismiss-keyguard
+"$adb" shell dumpsys power | grep -m1 mWakefulness= || true
+
+paso "Instalacion"
+"$adb" install -r "$apk"
+"$adb" logcat -c
+libdir="$("$adb" shell dumpsys package $pkg | sed -n 's/.*legacyNativeLibraryDir=//p' | tr -d '\r' | head -1)"
+"$adb" shell ls -l "$libdir/x86_64/" | tee "$salida/nativelibs.txt"
+grep -q -- '-rwx.*libflow-texto.so' "$salida/nativelibs.txt" || falla "libflow-texto.so no es ejecutable"
+
+volcar() {  # $1 = nombre; deja $salida/$1.xml, $1.png y el texto visible en $1.txt
+  "$adb" shell uiautomator dump /sdcard/ui.xml >/dev/null
+  "$adb" pull /sdcard/ui.xml "$salida/$1.xml" >/dev/null
+  grep -o ' text="[^"]*"' "$salida/$1.xml" | sed 's/^ text="//; s/"$//' | grep -v '^$' >"$salida/$1.txt" || true
+  "$adb" exec-out screencap -p >"$salida/$1.png"
+}
+espera() {  # $1 = nombre, $2 = texto esperado
+  grep -qF -- "$2" "$salida/$1.txt" && echo "OK  $1: «$2»" || falla "$1: no aparece «$2»"
+}
+
+paso "MainActivity (arranque en frio)"
+"$adb" shell am start -W -n $pkg/.MainActivity | tee "$salida/start-main.txt"
+sleep 4; volcar main
+espera main "Flow Buscador"; espera main "Listo"
+
+paso "BuscarActivity (arranque en frio) y consultas"
+"$adb" shell am force-stop $pkg
+"$adb" shell am start -W -n $pkg/.BuscarActivity | tee "$salida/start-buscar.txt"
+sleep 3
+consulta() {  # $1 = nombre, $2 = texto (espacios como %s), $3 = resultado esperado
+  "$adb" shell input keyevent KEYCODE_MOVE_END
+  for _ in $(seq 1 15); do "$adb" shell input keyevent KEYCODE_DEL; done
+  "$adb" shell input text "$2"; sleep 5
+  volcar "$1"; espera "$1" "$3"
+}
+consulta buscar-set "set" "Ajustes del sistema"
+consulta buscar-calc "2+2" "2+2 — toca para copiar"
+consulta buscar-tx "tx%shola" "HOLA"
+espera buscar-tx "aG9sYQ=="
+"$adb" shell "ps -A -o PID,PPID,NAME | grep -E 'flowlauncher|flow-texto'" | tee "$salida/procesos.txt"
+grep -q libflow-texto.so "$salida/procesos.txt" || falla "no hay proceso del plugin"
+
+paso "Burbuja"
+"$adb" shell appops set $pkg SYSTEM_ALERT_WINDOW allow
+"$adb" shell input keyevent KEYCODE_BACK
+"$adb" shell am start -W -n $pkg/.MainActivity >/dev/null; sleep 3
+volcar main-antes
+bounds="$(grep -o '<node [^>]*text="Burbuja flotante"[^>]*>' "$salida/main-antes.xml" | grep -o 'bounds="[^"]*"' | head -1 || true)"
+read -r x1 y1 x2 y2 <<<"$(echo "$bounds" | grep -oE '[0-9]+' | tr '\n' ' ')"
+"$adb" shell input tap $(( (x1 + x2) / 2 )) $(( (y1 + y2) / 2 )); sleep 6
+servicios="$("$adb" shell dumpsys activity services $pkg)"
+grep -q 'isForeground=true' <<<"$servicios" && echo "OK  BurbujaService en primer plano" || falla "BurbujaService no esta en primer plano"
+ventana=""
+for _ in 1 2 3 4 5 6; do  # la ventana de la burbuja puede tardar en aparecer sin KVM
+  ventanas="$("$adb" shell dumpsys window windows | tr -d '\r')"
+  ventana="$(grep -A4 "u0 $pkg}:" <<<"$ventanas" | grep 'APPLICATION_OVERLAY' | grep -oE '\([0-9]+,[0-9]+\)\([0-9]+x[0-9]+\)' | head -1 || true)"
+  [[ -n "$ventana" ]] && break
+  sleep 5
+done
+echo "Ventana superpuesta: ${ventana:-ninguna}"
+if [[ -n "$ventana" ]]; then
+  read -r bx by bw bh <<<"$(echo "$ventana" | grep -oE '[0-9]+' | tr '\n' ' ')"
+  "$adb" shell input keyevent KEYCODE_HOME; sleep 3
+  "$adb" shell input tap $(( bx + bw / 2 )) $(( by + bh / 2 )); sleep 6
+  "$adb" shell input text "tx%shola"; sleep 5
+  volcar burbuja-tx; espera burbuja-tx "HOLA"
+else
+  falla "no hay ventana APPLICATION_OVERLAY"
+fi
+
+paso "Logcat"
+"$adb" logcat -d >"$salida/logcat.txt"
+if grep -E "FATAL EXCEPTION|UnsatisfiedLinkError|Fatal signal|ANR in $pkg" "$salida/logcat.txt" | grep -C0 -E "$pkg|FATAL|Unsatisfied"; then
+  falla "crash en logcat (ver $salida/logcat.txt)"
+fi
+"$adb" shell ls /data/tombstones/ 2>/dev/null | tee "$salida/tombstones.txt" || true
+
+paso "Resultado: $fallos fallo(s). Ficheros en $salida"
+exit $(( fallos > 0 ))
