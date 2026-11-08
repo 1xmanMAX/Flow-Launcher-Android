@@ -2,8 +2,10 @@ package com.max.flowlauncher
 
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.LinearGradient
-import android.graphics.Shader
+import android.graphics.Rect
+import android.graphics.Path
+import android.graphics.Matrix
+import android.content.res.Configuration
 import android.graphics.ColorFilter
 import android.graphics.Paint
 import android.graphics.PixelFormat
@@ -77,21 +79,15 @@ object Insignias {
 
     private val cache = HashMap<String, Drawable>()
 
-    /** El cuadro de una extension (se reutiliza: es inmutable). */
+    /** La hoja de una extension (se reutiliza: es inmutable). */
     fun de(clave: String, densidad: Float): Drawable {
         val ext = extension(clave)
         return synchronized(cache) {
-            cache.getOrPut("ext:$ext") {
-                val f = familia(ext)
-                Baldosa(f.color, densidad, rotulo = ext.take(4), textoOscuro = f.textoOscuro)
-            }
+            cache.getOrPut("ext:$ext") { Hoja(familia(ext).color, ext.take(4).uppercase(), densidad) }
         }
     }
 
-    /**
-     * Las funciones: el mismo cuadrado que los archivos, con su color y el
-     * simbolo en blanco. Asi todo lo que no es una app se ve de una familia.
-     */
+    /** Las funciones: su simbolo de trazo fino, en su color, sobre el mismo color muy claro. */
     private class Funcion(val icono: Int, val color: Int)
 
     private val funciones = mapOf(
@@ -102,9 +98,9 @@ object Insignias {
         "archivos" to Funcion(R.drawable.ic_carpeta, 0xE8A317),
         "carpeta" to Funcion(R.drawable.ic_carpeta, 0xE8A317),
         "plugin" to Funcion(R.drawable.ic_plugin, 0x7048E8),
-        "buscar" to Funcion(R.drawable.ic_buscar, 0x495057),
-        "ic_compartir" to Funcion(R.drawable.ic_compartir, 0x1098AD),
-        "ic_abrir_con" to Funcion(R.drawable.ic_abrir_con, 0x5B3CC4),
+        "buscar" to Funcion(R.drawable.ic_buscar, 0x5F6B7A),
+        "ic_compartir" to Funcion(R.drawable.ic_compartir, 0x0E9AA7),
+        "ic_abrir_con" to Funcion(R.drawable.ic_abrir_con, 0x6741D9),
         "ic_copiar" to Funcion(R.drawable.ic_copiar, 0x6C757D),
         "ic_carpeta" to Funcion(R.drawable.ic_carpeta, 0xE8A317),
     )
@@ -112,82 +108,73 @@ object Insignias {
     /** `web`, `calc`, `ic_compartir`... o null si no es una de las nuestras. */
     fun funcion(c: Context, nombre: String): Drawable? {
         val f = funciones[nombre] ?: return null
+        val oscuro = (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
+            Configuration.UI_MODE_NIGHT_YES
         return synchronized(cache) {
-            cache.getOrPut("fn:$nombre") {
-                val simbolo = c.getDrawable(f.icono)?.mutate()?.apply { setTint(0xFFFFFFFF.toInt()) }
-                Baldosa(f.color, c.resources.displayMetrics.density, simbolo = simbolo)
+            cache.getOrPut("fn:$nombre:$oscuro") {
+                val color = 0xFF000000.toInt() or f.color
+                val simbolo = c.getDrawable(f.icono)?.mutate()?.apply { setTint(color) }
+                // En oscuro el fondo un poco mas presente: si no, no se ve.
+                Suave(color, if (oscuro) 0x33 else 0x1F, simbolo, c.resources.displayMetrics.density)
             }
         }
     }
 
     /**
-     * Un cuadrado de esquinas redondeadas (casi un «squircle», como los iconos
-     * de iOS y Raycast) con un brillo suave arriba, y dentro la extension o un
-     * simbolo. Mismo tamano y forma para todo: la lista se ve ordenada.
+     * Un archivo: una hoja cuadrada de su color, con la esquina de arriba a la
+     * derecha doblada y la extension en mayusculas (como la de PixPin, pero
+     * cuadrada). Dibujada sobre una rejilla de 36 x 36.
      */
-    private class Baldosa(
-        color: Int,
-        d: Float,
-        val rotulo: String = "",
-        textoOscuro: Boolean = false,
-        val simbolo: Drawable? = null,
-    ) : Drawable() {
-        private val base = 0xFF000000.toInt() or color
-        private val fondo = Paint(Paint.ANTI_ALIAS_FLAG)
-        private val borde = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 1f * d
-            this.color = 0x1F000000
-        }
+    private class Hoja(color: Int, val rotulo: String, d: Float) : Drawable() {
+        private val fondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = 0xFF000000.toInt() or color }
+        private val pliegue = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = 0x59FFFFFF }
         private val letra = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = if (textoOscuro) 0xE6000000.toInt() else 0xFFFFFFFF.toInt()
-            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+            this.color = 0xFFFFFFFF.toInt()
+            typeface = Typeface.create("sans-serif", Typeface.BOLD)
             textAlign = Paint.Align.CENTER
             letterSpacing = 0.02f
         }
         private val lado = (36 * d).toInt()
-        private val caja = RectF()
-        private var degradadoPara = -1
+        private val hoja = Path()
+        private val esquina = Path()
+        private val m = Matrix()
+        private var para = Rect()
 
-        /** Un poco mas claro arriba y un poco mas oscuro abajo: con volumen, sin brillos falsos. */
-        private fun degradado(alto: Float, top: Float) {
-            val clave = (alto.toInt() shl 16) xor top.toInt()
-            if (clave == degradadoPara) return
-            degradadoPara = clave
-            fondo.shader = LinearGradient(
-                0f, top, 0f, top + alto,
-                mezclar(base, 0xFFFFFFFF.toInt(), 0.14f), mezclar(base, 0xFF000000.toInt(), 0.10f),
-                Shader.TileMode.CLAMP,
-            )
+        private fun rehacer(b: Rect) {
+            if (b == para) return
+            para = Rect(b)
+            val l = minOf(b.width(), b.height()).toFloat()
+            val e = l / 36f
+            fun base() = Path().apply {
+                // M8 1h14l13 13v13a8 8 0 0 1-8 8H9a8 8 0 0 1-8-8V9a8 8 0 0 1 8-8z
+                moveTo(9f, 1f); lineTo(22f, 1f); lineTo(35f, 14f); lineTo(35f, 27f)
+                arcTo(RectF(19f, 19f, 35f, 35f), 0f, 90f); lineTo(9f, 35f)
+                arcTo(RectF(1f, 19f, 17f, 35f), 90f, 90f); lineTo(1f, 9f)
+                arcTo(RectF(1f, 1f, 17f, 17f), 180f, 90f); close()
+            }
+            fun pliegue() = Path().apply {
+                // M22 1v7a6 6 0 0 0 6 6h7z
+                moveTo(22f, 1f); lineTo(22f, 8f); arcTo(RectF(22f, 2f, 34f, 14f), 180f, -90f); lineTo(35f, 14f); close()
+            }
+            m.reset()
+            m.setScale(e, e)
+            m.postTranslate(b.exactCenterX() - l / 2, b.exactCenterY() - l / 2)
+            hoja.reset(); hoja.addPath(base(), m)
+            esquina.reset(); esquina.addPath(pliegue(), m)
+            letra.textSize = e * if (rotulo.length >= 4) 8.5f else 10f
         }
 
         override fun draw(c: Canvas) {
             val b = bounds
-            val l = minOf(b.width(), b.height()).toFloat()
-            // Cuadrado, centrado en lo que le den.
-            caja.set(b.exactCenterX() - l / 2, b.exactCenterY() - l / 2, b.exactCenterX() + l / 2, b.exactCenterY() + l / 2)
-            val radio = l * 0.26f
-            degradado(l, caja.top)
-            c.drawRoundRect(caja, radio, radio, fondo)
-            val m = borde.strokeWidth / 2
-            caja.inset(m, m)
-            c.drawRoundRect(caja, radio - m, radio - m, borde)
-            caja.inset(-m, -m)
-            val s = simbolo
-            if (s != null) {
-                val t = (l * 0.24f).toInt()
-                s.setBounds(caja.left.toInt() + t, caja.top.toInt() + t, caja.right.toInt() - t, caja.bottom.toInt() - t)
-                s.draw(c)
-                return
-            }
+            rehacer(b)
+            c.drawPath(hoja, fondo)
+            c.drawPath(esquina, pliegue)
             if (rotulo.isEmpty()) return
-            letra.textSize = l * when (rotulo.length) {
-                1, 2 -> 0.38f
-                3 -> 0.31f
-                else -> 0.25f
-            }
-            val y = caja.centerY() - (letra.descent() + letra.ascent()) / 2
-            c.drawText(rotulo, caja.centerX(), y, letra)
+            val l = minOf(b.width(), b.height()).toFloat()
+            val e = l / 36f
+            val x0 = b.exactCenterX() - l / 2
+            val y0 = b.exactCenterY() - l / 2
+            c.drawText(rotulo, x0 + 17f * e, y0 + 26f * e, letra)
         }
 
         override fun getIntrinsicWidth() = lado
@@ -195,14 +182,37 @@ object Insignias {
         override fun setAlpha(a: Int) {
             fondo.alpha = a
             letra.alpha = a
+        }
+        override fun setColorFilter(cf: ColorFilter?) {}
+        @Deprecated("Drawable") override fun getOpacity() = PixelFormat.TRANSLUCENT
+    }
+
+    /** Una funcion: cuadrado de esquinas redondeadas en su color muy claro y el simbolo en su color. */
+    private class Suave(color: Int, alfa: Int, val simbolo: Drawable?, d: Float) : Drawable() {
+        private val fondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = (alfa shl 24) or (color and 0xFFFFFF) }
+        private val lado = (36 * d).toInt()
+        private val caja = RectF()
+
+        override fun draw(c: Canvas) {
+            val b = bounds
+            val l = minOf(b.width(), b.height()).toFloat()
+            caja.set(b.exactCenterX() - l / 2, b.exactCenterY() - l / 2, b.exactCenterX() + l / 2, b.exactCenterY() + l / 2)
+            val r = l * 0.28f
+            c.drawRoundRect(caja, r, r, fondo)
+            val s = simbolo ?: return
+            // El simbolo, a algo mas de la mitad.
+            val t = (l * 0.235f).toInt()
+            s.setBounds(caja.left.toInt() + t, caja.top.toInt() + t, caja.right.toInt() - t, caja.bottom.toInt() - t)
+            s.draw(c)
+        }
+
+        override fun getIntrinsicWidth() = lado
+        override fun getIntrinsicHeight() = lado
+        override fun setAlpha(a: Int) {
+            fondo.alpha = a
             simbolo?.alpha = a
         }
         override fun setColorFilter(cf: ColorFilter?) {}
         @Deprecated("Drawable") override fun getOpacity() = PixelFormat.TRANSLUCENT
-
-        private fun mezclar(a: Int, b: Int, t: Float): Int {
-            fun canal(s: Int) = (((a shr s) and 0xFF) * (1 - t) + ((b shr s) and 0xFF) * t).toInt() shl s
-            return (0xFF shl 24) or canal(16) or canal(8) or canal(0)
-        }
     }
 }
