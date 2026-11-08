@@ -11,7 +11,7 @@ cuentas, búsquedas web y lo que aporten los plugins**, mientras escribes.
 |---|---|---|
 | Búsqueda local (5000 elementos) | < 1 ms | ~0,2 ms (x86, release) |
 | Consulta a un plugin v2 ya arrancado | < 20 ms | ~0,5 ms |
-| APK | < 5 MB | 1,8 MB (3 arquitecturas) |
+| Núcleo nativo (arm64) | < 2 MB | 1,6 MB con el motor JavaScript |
 | Android mínimo | 7.0 (API 24) | ✅ |
 | Dependencias Java/Kotlin | ninguna | ✅ (ni AndroidX) |
 
@@ -54,7 +54,8 @@ Lo que se escribe:
 | `wifi` | Ajustes de Wi‑Fi |
 | `12*3+1` | 37 (toca para copiar) |
 | `g gatos` · `yt música` · `wiki Lima` · `map café` | Búsqueda web |
-| `tx Hola` | Plugin de ejemplo: MAYÚSCULAS, Base64… |
+| `tx Hola` | Plugin nativo de ejemplo: MAYÚSCULAS, Base64… |
+| `cv 10 km a mi` | Plugin JavaScript de ejemplo: conversor de unidades |
 | mantener pulsado | Menú del plugin / copiar / ficha de la app |
 
 ## Plugins
@@ -65,14 +66,14 @@ Compatibles con el **mismo protocolo que Flow Launcher**: el mismo
 | Tipo de plugin de Flow | En Android |
 |---|---|
 | `Executable` / `Executable_V2` (Rust, Go, C, C++…) | ✅ compilado para Android |
-| JavaScript | 🚧 con QuickJS (en desarrollo) |
+| JavaScript | ✅ con QuickJS dentro del núcleo (sin red de momento) |
 | Python | ⚠️ previsto como complemento opcional |
 | C# / F# (.NET) | ❌ |
 
 ## Compilar
 
-Requisitos: JDK 17+, Android SDK con NDK, Rust con los targets de Android y
-`cargo-ndk`.
+Requisitos: JDK 17+, Android SDK con NDK, Rust con los targets de Android,
+`cargo-ndk` y libclang (para generar las cabeceras de QuickJS).
 
 ```bash
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
