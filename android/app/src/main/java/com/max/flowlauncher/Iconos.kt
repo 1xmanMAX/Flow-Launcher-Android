@@ -56,6 +56,9 @@ object Iconos {
     }
 
     private fun cargar(c: Context, clave: String, lado: Int): Drawable? {
+        if (clave.startsWith("pkg:")) {
+            return c.packageManager.getApplicationIcon(clave.substring(4))
+        }
         if (clave.startsWith("app:")) {
             val partes = clave.substring(4).split('/', limit = 2)
             if (partes.size < 2) return null

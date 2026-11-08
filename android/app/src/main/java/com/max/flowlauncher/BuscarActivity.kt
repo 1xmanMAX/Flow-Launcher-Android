@@ -66,6 +66,8 @@ class BuscarActivity : Activity() {
     override fun onCreate(estado: Bundle?) {
         super.onCreate(estado)
         setContentView(R.layout.buscar)
+        // Que las apps proveedoras ya esten despiertas para la primera tecla.
+        App.fondo.execute { Proveedores.calentar(applicationContext) }
         window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         // adjustResize no sirve de borde a borde (Android 15): el teclado se
         // resta como relleno y el panel, con la lista, cabe en lo que queda.
@@ -177,7 +179,8 @@ class BuscarActivity : Activity() {
         locales = Resultado.lista(r.optJSONArray("r"))
         mostrarLocales?.let { App.principal.removeCallbacks(it) }
         verCargando?.let { App.principal.removeCallbacks(it) }
-        if (!r.optBoolean("p")) {
+        val proveedores = Proveedores.destinos(q).takeIf { it.isNotEmpty() }
+        if (!r.optBoolean("p") && proveedores == null) {
             cargando.visibility = View.INVISIBLE
             mostrar(locales)
             return
@@ -193,11 +196,16 @@ class BuscarActivity : Activity() {
             App.principal.postDelayed(it, ESPERA_ANTES_DE_CARGANDO)
         }
         val locales = locales
+        val hayPlugins = r.optBoolean("p")
         hiloPlugins.execute {
             // Si ya se escribio otra tecla, esta consulta no le importa a nadie.
             if (mio != turno) return@execute
-            val de = runCatching { Resultado.lista(JSONArray(Nucleo.consultarPlugins(q, 20, 1500))) }
-                .getOrElse { emptyList() }
+            // Las apps proveedoras (PixPin...) en paralelo con los plugins.
+            val deApps = proveedores?.let { d -> Proveedores.buscarAparte(applicationContext, d) }
+            val dePlugins = if (!hayPlugins) emptyList() else runCatching {
+                Resultado.lista(JSONArray(Nucleo.consultarPlugins(q, 20, 1500)))
+            }.getOrElse { emptyList() }
+            val de = dePlugins + (runCatching { deApps?.get() }.getOrNull() ?: emptyList())
             val ev = runCatching { JSONArray(Nucleo.eventos()) }.getOrElse { JSONArray() }
             App.principal.post {
                 if (cerrada || mio != turno) return@post

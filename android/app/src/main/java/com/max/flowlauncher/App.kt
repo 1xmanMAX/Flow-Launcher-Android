@@ -85,6 +85,7 @@ class App : Application() {
                 listo.countDown()
             }
             runCatching { Fuentes.cargarTodo(this) }.onFailure { Log.e("Flow", "Fuentes", it) }
+            runCatching { Proveedores.cargar(this) }
         }
         // Apps instaladas o quitadas: releerlas.
         val filtro = IntentFilter().apply {
@@ -95,7 +96,11 @@ class App : Application() {
         }
         val receptor = object : BroadcastReceiver() {
             override fun onReceive(c: Context, i: Intent) {
-                fondo.execute { Fuentes.cargarApps(c) }
+                fondo.execute {
+                    Fuentes.cargarApps(c)
+                    // Una app instalada o actualizada puede ser un proveedor nuevo.
+                    Proveedores.cargar(c)
+                }
             }
         }
         runCatching {

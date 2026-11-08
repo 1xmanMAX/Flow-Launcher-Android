@@ -20,6 +20,12 @@
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
+        <!-- Las apps que ponen sus resultados en el buscador (docs/proveedores.md). -->
+        <intent>
+            <action android:name="com.max.flowlauncher.PROVEEDOR" />
+        </intent>
+        <!-- PixPin: sus senas pindesk://atajo/... -->
+        <package android:name="com.forge.pixpin" />
     </queries>
 
     <application
