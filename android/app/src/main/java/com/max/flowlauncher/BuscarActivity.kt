@@ -45,6 +45,10 @@ class BuscarActivity : Activity() {
         const val ESPERA_ANTES_DE_CARGANDO = 300L
         /** Lo mas largo que se acepta de otra app como consulta. */
         const val MAX_TEXTO = 500
+
+        /** La ultima busqueda (ver [guardarUltima]). */
+        @Volatile
+        var ultima: String? = null
     }
 
     private lateinit var consulta: EditText
@@ -132,9 +136,22 @@ class BuscarActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        // Fuera de la vista no se queda abierta: la proxima vez, en blanco.
+        // Lo escrito se recuerda para la proxima vez (como Flow).
+        guardarUltima(consulta.text.toString())
+        // Fuera de la vista no se queda abierta.
         if (!isChangingConfigurations) finish()
     }
+
+    /** La ultima busqueda: en memoria y en disco (por si el proceso muere). */
+    private fun guardarUltima(t: String) {
+        if (t == ultima) return
+        ultima = t
+        runCatching { getSharedPreferences("buscar", MODE_PRIVATE).edit().putString("ultima", t).apply() }
+    }
+
+    private fun leerUltima(): String = ultima
+        ?: runCatching { getSharedPreferences("buscar", MODE_PRIVATE).getString("ultima", "") }.getOrNull().orEmpty()
+            .also { ultima = it }
 
     override fun finish() {
         super.finish()
@@ -156,8 +173,17 @@ class BuscarActivity : Activity() {
                 else -> i?.getStringExtra("consulta")
             }
         }.getOrNull() ?: ""
-        // Un texto enorme compartido no es una busqueda: solo el principio.
-        cambiarConsulta(texto.trim().take(MAX_TEXTO))
+        val nuevo = texto.trim().take(MAX_TEXTO)
+        if (nuevo.isNotEmpty()) {
+            // Un texto enorme compartido no es una busqueda: solo el principio.
+            cambiarConsulta(nuevo)
+            return
+        }
+        // Abrir sin nada: la ultima busqueda, con sus resultados y todo
+        // seleccionado. Escribir la sustituye; tocar el texto la edita.
+        val antes = leerUltima()
+        cambiarConsulta(antes)
+        if (antes.isNotEmpty()) consulta.selectAll()
     }
 
     private fun cambiarConsulta(t: String) {
