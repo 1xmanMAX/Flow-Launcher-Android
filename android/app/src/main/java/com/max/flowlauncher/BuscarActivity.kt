@@ -37,6 +37,15 @@ import java.util.concurrent.TimeUnit
  */
 class BuscarActivity : Activity() {
 
+    private companion object {
+        /** Cuanto se espera a los plugins antes de ensenar solo lo local. */
+        const val ESPERA_ANTES_DE_LO_LOCAL = 120L
+        /** Cuanto tienen que tardar para que salga el indicador de carga. */
+        const val ESPERA_ANTES_DE_CARGANDO = 300L
+        /** Lo mas largo que se acepta de otra app como consulta. */
+        const val MAX_TEXTO = 500
+    }
+
     private lateinit var consulta: EditText
     private lateinit var lista: ListView
     private lateinit var cargando: ProgressBar
@@ -156,18 +165,34 @@ class BuscarActivity : Activity() {
         if (t.isEmpty()) buscar("")
     }
 
+    /** Lo que se ensena si lo de los plugins tarda (ver [buscar]). */
+    private var mostrarLocales: Runnable? = null
+    private var verCargando: Runnable? = null
+
     private fun buscar(q: String) {
         if (cerrada) return
         val mio = ++turno
         // Si el nucleo falla (no cargo, JSON raro), sin resultados pero sin cerrarse.
         val r = runCatching { JSONObject(Nucleo.consultar(q, 20)) }.getOrElse { JSONObject() }
         locales = Resultado.lista(r.optJSONArray("r"))
-        mostrar(locales)
+        mostrarLocales?.let { App.principal.removeCallbacks(it) }
+        verCargando?.let { App.principal.removeCallbacks(it) }
         if (!r.optBoolean("p")) {
             cargando.visibility = View.INVISIBLE
+            mostrar(locales)
             return
         }
-        cargando.visibility = View.VISIBLE
+        // Sin parpadeo: lo de antes se queda en pantalla y lo nuevo sale de
+        // una vez, ya junto con lo de los plugins (casi siempre en unos ms).
+        // Solo si tardan se ensena antes lo local, y el indicador de carga
+        // solo si tardan de verdad.
+        mostrarLocales = Runnable { if (mio == turno && !cerrada) mostrar(locales) }.also {
+            App.principal.postDelayed(it, ESPERA_ANTES_DE_LO_LOCAL)
+        }
+        verCargando = Runnable { if (mio == turno && !cerrada) cargando.visibility = View.VISIBLE }.also {
+            App.principal.postDelayed(it, ESPERA_ANTES_DE_CARGANDO)
+        }
+        val locales = locales
         hiloPlugins.execute {
             // Si ya se escribio otra tecla, esta consulta no le importa a nadie.
             if (mio != turno) return@execute
@@ -176,6 +201,8 @@ class BuscarActivity : Activity() {
             val ev = runCatching { JSONArray(Nucleo.eventos()) }.getOrElse { JSONArray() }
             App.principal.post {
                 if (cerrada || mio != turno) return@post
+                mostrarLocales?.let { App.principal.removeCallbacks(it) }
+                verCargando?.let { App.principal.removeCallbacks(it) }
                 cargando.visibility = View.INVISIBLE
                 if (ev.length() > 0 && Acciones.eventos(this, ev, ::cambiarConsulta)) finish()
                 mostrar((locales + de).sortedByDescending { it.puntos }.take(30))
@@ -184,11 +211,19 @@ class BuscarActivity : Activity() {
     }
 
     private fun mostrar(r: List<Resultado>) {
+        // Lo mismo que ya se ve: no se repinta nada.
+        val igual = r.size == adaptador.items.size && r.indices.all { i ->
+            val a = r[i]
+            val b = adaptador.items[i]
+            a.titulo == b.titulo && a.subtitulo == b.subtitulo && a.icono == b.icono && a.resaltado.contentEquals(b.resaltado)
+        }
         adaptador.items = r
         adaptador.consultaActual = consulta.text.toString()
+        if (igual) return
         adaptador.notifyDataSetChanged()
-        separador.visibility = if (r.isEmpty()) View.GONE else View.VISIBLE
-        if (r.isNotEmpty()) lista.setSelection(0)
+        val sep = if (r.isEmpty()) View.GONE else View.VISIBLE
+        if (separador.visibility != sep) separador.visibility = sep
+        if (r.isNotEmpty() && lista.firstVisiblePosition != 0) lista.setSelection(0)
     }
 
     private fun elegir(r: Resultado) {
@@ -283,11 +318,6 @@ class BuscarActivity : Activity() {
             }
             return s
         }
-    }
-
-    private companion object {
-        /** Lo mas largo que se acepta de otra app como consulta. */
-        const val MAX_TEXTO = 500
     }
 
     private class Fila(val icono: ImageView, val titulo: TextView, val subtitulo: TextView)

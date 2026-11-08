@@ -13,7 +13,7 @@ import android.widget.ImageView
  * la segunda vez salen al instante. Mientras tanto, el icono del tipo.
  */
 object Iconos {
-    private val cache = LruCache<String, Drawable>(150)
+    private val cache = LruCache<String, Drawable>(400)
     private val hilo = App.hilos("flow-iconos", 2)
 
     fun porDefecto(fuente: String): Int = when {
@@ -26,10 +26,18 @@ object Iconos {
     }
 
     fun poner(v: ImageView, r: Resultado) {
-        val clave = r.icono
+        val clave = r.icono.ifEmpty { "def:${r.fuente}" }
+        // La misma fila con el mismo icono (lo normal al teclear): no tocar
+        // nada. Volver a ponerlo, o pasar por el de por defecto, parpadea.
+        if (v.tag == clave && v.drawable != null) return
         v.tag = clave
-        if (clave.isEmpty()) {
+        if (clave.startsWith("def:")) {
             v.setImageResource(porDefecto(r.fuente))
+            return
+        }
+        // El cuadro de color de una extension: se dibuja, no se carga.
+        if (clave.startsWith("ext:")) {
+            v.setImageDrawable(Insignias.de(clave, v.resources.displayMetrics.density))
             return
         }
         val hay = cache.get(clave)
