@@ -12,7 +12,7 @@ import java.io.File
  */
 object MenuDeArchivo {
 
-    fun de(ruta: String): List<Resultado> {
+    fun de(ruta: String, pinDesk: Boolean = false): List<Resultado> {
         val esCarpeta = ruta.endsWith("/")
         val f = File(ruta.trimEnd('/'))
         val nombre = f.name
@@ -27,6 +27,7 @@ object MenuDeArchivo {
         }
         if (!esCarpeta) {
             fila("Compartir", "Mandar «$nombre» a otra app", "compartir:${f.path}", "res:ic_compartir")
+            if (pinDesk) fila("Enviar a PinDesk", "Abrirlo o guardarlo en PinDesk", "pindesk:${f.path}", "pkg:${Acciones.PINDESK}")
             fila("Abrir con…", "Elegir con qué app abrirlo", "abrircon:${f.path}", "res:ic_abrir_con")
         }
         fila(

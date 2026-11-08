@@ -56,6 +56,11 @@ object Acciones {
             "interno" -> interno(c, resto)
             "archivo" -> archivo(c, resto)
             "compartir" -> compartir(c, resto)
+            "pindesk" -> enviarAPinDesk(c, resto)
+            "ventanas" -> {
+                Ventanas.pedirPermiso(c)
+                true
+            }
             "abrircon" -> archivo(c, resto, elegir = true)
             else -> false
         }
@@ -74,6 +79,30 @@ object Acciones {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         // «Abrir con…»: siempre la lista de apps, aunque haya una por defecto.
         return abrir(c, if (elegir) Intent.createChooser(i, "Abrir «${f.name}» con") else i)
+    }
+
+    /** PinDesk (PixPin) instalado: su entrada para recibir archivos. */
+    const val PINDESK = "com.forge.pixpin"
+    private const val PINDESK_RECIBIR = "com.forge.pixpin.guardados.AbrirConPixPinActivity"
+
+    fun hayPinDesk(c: Context) = runCatching { c.packageManager.getPackageInfo(PINDESK, 0); true }.getOrDefault(false)
+
+    /**
+     * Mandar un archivo a PinDesk, como «Compartir → PinDesk» pero sin
+     * buscarlo en la lista: lo conocido se abre de paso y lo demas da su menu
+     * (`AbrirConPixPinActivity`).
+     */
+    private fun enviarAPinDesk(c: Context, ruta: String): Boolean {
+        val f = File(ruta)
+        if (!f.isFile) return false
+        val uri = ProveedorDeArchivos.uri(c, f)
+        val i = Intent(Intent.ACTION_SEND)
+            .setClassName(PINDESK, PINDESK_RECIBIR)
+            .setType(ProveedorDeArchivos.tipo(f.name) ?: "application/octet-stream")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        i.clipData = android.content.ClipData.newUri(c.contentResolver, f.name, uri)
+        return abrir(c, i)
     }
 
     /**

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- La burbuja flotante, sobre las demas apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -9,6 +10,8 @@
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Opcional: buscar contactos (se pide al activarlo). -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- Opcional: «w» para cambiar de app (Ajustes → Acceso a datos de uso). -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions" />
     <!-- Opcional: buscar archivos («c tesis»). Hasta Android 10, el permiso
          normal; desde Android 11, «Acceso a todos los archivos». -->
     <uses-permission

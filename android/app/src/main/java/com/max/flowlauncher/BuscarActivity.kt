@@ -209,7 +209,10 @@ class BuscarActivity : Activity() {
         val proveedores = Proveedores.destinos(q).takeIf { it.isNotEmpty() }
         // `p tesis`: la palabra clave es de la app; lo local no pinta nada.
         if (proveedores?.any { !it.global } == true) locales = emptyList()
-        if (!r.optBoolean("p") && proveedores == null) {
+        // `w chrome`: cambiar de app (Ventanas), tambien solo.
+        val ventanas = Ventanas.filtro(q)
+        if (ventanas != null) locales = emptyList()
+        if (!r.optBoolean("p") && proveedores == null && ventanas == null) {
             cargando.visibility = View.INVISIBLE
             mostrar(locales)
             return
@@ -234,7 +237,8 @@ class BuscarActivity : Activity() {
             val dePlugins = if (!hayPlugins) emptyList() else runCatching {
                 Resultado.lista(JSONArray(Nucleo.consultarPlugins(q, 20, 1500)))
             }.getOrElse { emptyList() }
-            val de = dePlugins + (runCatching { deApps?.get() }.getOrNull() ?: emptyList())
+            val deVentanas = ventanas?.let { Ventanas.buscar(applicationContext, it) } ?: emptyList()
+            val de = dePlugins + deVentanas + (runCatching { deApps?.get() }.getOrNull() ?: emptyList())
             val ev = runCatching { JSONArray(Nucleo.eventos()) }.getOrElse { JSONArray() }
             App.principal.post {
                 if (cerrada || mio != turno) return@post
@@ -311,7 +315,7 @@ class BuscarActivity : Activity() {
         // Un archivo del movil: compartir, abrir con, su carpeta, copiar.
         if (r.accion.startsWith("archivo:")) {
             ++turno
-            mostrar(MenuDeArchivo.de(r.accion.removePrefix("archivo:")))
+            mostrar(MenuDeArchivo.de(r.accion.removePrefix("archivo:"), Acciones.hayPinDesk(this)))
             return
         }
         // El menu de una fila de una app proveedora.

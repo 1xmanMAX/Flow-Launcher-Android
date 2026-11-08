@@ -103,6 +103,8 @@ object Insignias {
         "ic_abrir_con" to Funcion(R.drawable.ic_abrir_con, 0x6741D9),
         "ic_copiar" to Funcion(R.drawable.ic_copiar, 0x6C757D),
         "ic_carpeta" to Funcion(R.drawable.ic_carpeta, 0xE8A317),
+        "ic_ajustes" to Funcion(R.drawable.ic_ajustes, 0x5F6B7A),
+        "ic_buscar" to Funcion(R.drawable.ic_buscar, 0x5F6B7A),
     )
 
     /** `web`, `calc`, `ic_compartir`... o null si no es una de las nuestras. */
