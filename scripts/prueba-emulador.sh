@@ -43,7 +43,7 @@ fi
 paso "Arranque headless (sin KVM: ~5 min)"
 "$sdk/emulator/emulator" -avd "$avd" -no-window -no-audio -no-boot-anim -accel off \
   -gpu "$gpu" -no-snapshot -no-metrics >"$salida/emulator.log" 2>&1 &
-trap '"$adb" emu kill >/dev/null 2>&1 || true' EXIT
+trap '"$adb" logcat -d >"$salida/logcat-salida.txt" 2>/dev/null; "$adb" emu kill >/dev/null 2>&1 || true' EXIT
 t0=$(date +%s)
 until [[ "$("$adb" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; do
   (( $(date +%s) - t0 > 1500 )) && { echo "El emulador no arranco en 25 min"; exit 1; }
