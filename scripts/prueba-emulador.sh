@@ -58,6 +58,8 @@ echo "Arrancado en $(( $(date +%s) - t0 )) s"
 
 paso "Instalacion"
 "$adb" install -r "$apk"
+# Datos limpios: que no quede nada de una prueba anterior (la burbuja activa...).
+"$adb" shell pm clear com.max.flowlauncher >/dev/null
 "$adb" logcat -c
 libdir="$("$adb" shell dumpsys package $pkg | sed -n 's/.*legacyNativeLibraryDir=//p' | tr -d '\r' | head -1)"
 "$adb" shell ls -l "$libdir/x86_64/" | tee "$salida/nativelibs.txt"
@@ -91,6 +93,7 @@ consulta() {  # $1 = nombre, $2 = texto (espacios como %s), $3 = resultado esper
 consulta buscar-set "set" "Ajustes del sistema"
 consulta buscar-calc "2+2" "2+2 — toca para copiar"
 consulta buscar-tx "tx%shola" "HOLA"
+consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 espera buscar-tx "aG9sYQ=="
 "$adb" shell "ps -A -o PID,PPID,NAME | grep -E 'flowlauncher|flow-texto'" | tee "$salida/procesos.txt"
 grep -q libflow-texto.so "$salida/procesos.txt" || falla "no hay proceso del plugin"

@@ -13,7 +13,10 @@ object Plugins {
     fun instalarIncluidos(c: Context): File {
         val destino = File(c.filesDir, "plugins")
         val marca = File(destino, ".version")
-        val version = BuildConfig.VERSION_CODE.toString()
+        // La version y la fecha de instalacion: un APK nuevo con el mismo
+        // versionCode (al desarrollar) tambien trae sus plugins.
+        val actualizada = runCatching { c.packageManager.getPackageInfo(c.packageName, 0).lastUpdateTime }.getOrDefault(0L)
+        val version = "${BuildConfig.VERSION_CODE}-$actualizada"
         if (marca.isFile && marca.readText() == version) return destino
         copiar(c, "plugins", destino)
         marca.writeText(version)
