@@ -44,7 +44,6 @@ object Comandos {
     )
 
     private const val WHATSAPP = "com.whatsapp"
-    private const val TELEGRAM = "org.telegram.messenger"
     private const val SPOTIFY = "com.spotify.music"
 
     /**
@@ -129,14 +128,19 @@ object Comandos {
 
     private fun telegram(c: Context, resto: String, r: MutableList<Resultado>) {
         if (resto.isEmpty()) {
-            r += fila(c, "Abrir Telegram", "tg <usuario> · tg <mensaje>", "url:tg://", TELEGRAM)
+            r += fila(c, "Abrir Telegram", "tg <usuario> · tg <mensaje>", "url:tg://", telegram(c))
             return
         }
         val usuario = resto.removePrefix("@")
         if (Regex("[A-Za-z][A-Za-z0-9_]{3,31}").matches(usuario)) {
-            r += fila(c, "Abrir @$usuario en Telegram", "Chat, canal o grupo", "url:https://t.me/$usuario", TELEGRAM)
+            // Con el paquete puesto: directo a la Telegram que haya (Beta incluida), sin navegador.
+            val t = telegram(c)
+            val abrir = if (t != null) intent(Intent(Intent.ACTION_VIEW, Uri.parse("tg://resolve?domain=$usuario")).setPackage(t))
+            else "url:https://t.me/$usuario"
+            r += fila(c, "Abrir @$usuario en Telegram", "Chat, canal o grupo", abrir, t)
         }
-        r += fila(c, "Enviar «$resto» por Telegram", "Eliges el chat", enviar(resto, TELEGRAM), TELEGRAM)
+        val t = telegram(c) ?: Paquetes.TELEGRAM.first()
+        r += fila(c, "Enviar «$resto» por Telegram", "Eliges el chat", enviar(resto, t), t)
     }
 
     private fun sms(c: Context, resto: String, r: MutableList<Resultado>) {
@@ -239,6 +243,9 @@ object Comandos {
      * directo: su enlace oficial con el paquete puesto, para que no pase por el navegador
      * (en algunos moviles `wa.me` abre antes una pagina web). Sin WhatsApp, el enlace.
      */
+    /** La Telegram instalada: la normal, Beta, web, X o Plus. */
+    private fun telegram(c: Context) = Paquetes.instalado(c, Paquetes.TELEGRAM)
+
     private fun chatDeWhatsApp(c: Context, numero: String, mensaje: String): String {
         val url = "https://api.whatsapp.com/send?phone=$numero${texto("&text=", mensaje)}"
         val app = listOf(WHATSAPP, "com.whatsapp.w4b").firstOrNull { instalada(c, it) } ?: return "url:$url"

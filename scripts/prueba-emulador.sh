@@ -69,6 +69,8 @@ paso "Instalacion"
 prueba_apk_c="$raiz/android/proveedor-prueba/build/outputs/apk/debug/proveedor-prueba-debug.apk"
 [[ -f "$prueba_apk_c" ]] && "$adb" push "$prueba_apk_c" /sdcard/Download/AppDePrueba.apk >/dev/null
 "$adb" shell appops set com.max.flowlauncher REQUEST_INSTALL_PACKAGES allow >/dev/null 2>&1 || true
+# Dos con el mismo nombre y distinta fecha: el nuevo tiene que salir primero.
+"$adb" shell 'echo a > "/sdcard/Download/Informe viejo.pdf"; touch -d 2020-01-01T10:00:00 "/sdcard/Download/Informe viejo.pdf"; echo b > "/sdcard/Download/informe nuevo.pdf"'
 "$adb" logcat -c
 libdir="$("$adb" shell dumpsys package $pkg | sed -n 's/.*legacyNativeLibraryDir=//p' | tr -d '\r' | head -1)"
 "$adb" shell ls -l "$libdir/x86_64/" | tee "$salida/nativelibs.txt"
@@ -126,6 +128,10 @@ consulta cmd-sugerir "tim" "Temporizador  ·  timer"
 consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 consulta buscar-pixpin "p%st%scomprar%span" "Apuntar «comprar pan» como tarea"
 consulta buscar-archivos "c%stesis" "Tesis final.pdf"
+consulta buscar-fecha "c%sinforme" "informe nuevo.pdf"
+n1=$(grep -n "informe nuevo.pdf" "$salida/buscar-fecha.txt" | head -1 | cut -d: -f1)
+n2=$(grep -n "Informe viejo.pdf" "$salida/buscar-fecha.txt" | head -1 | cut -d: -f1)
+[[ -n "$n1" && -n "$n2" && "$n1" -lt "$n2" ]] && echo "OK  orden por fecha: lo nuevo arriba" || falla "orden por fecha ($n1, $n2)"
 # Mantener pulsado el archivo: el menu con «Compartir», y compartir abre la lista de apps.
 tocar buscar-archivos "Tesis final.pdf" largo; volcar menu-archivo
 espera menu-archivo "Compartir"; espera menu-archivo "Copiar la ruta"

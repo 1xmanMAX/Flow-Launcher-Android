@@ -150,18 +150,30 @@ impl IndiceArchivos {
                 continue;
             }
             if let Some(c) = p.puntuar(nombre, e.ascii) {
-                hallados.push((c.puntos + reciente(e.modificado, ahora), n as u32));
+                hallados.push((c.puntos, n as u32));
             }
         }
-        let orden = |a: &(i32, u32), b: &(i32, u32)| b.0.cmp(&a.0).then(a.1.cmp(&b.1));
+        // **Lo mas reciente arriba** (el usuario, 9-nov-2026). Pero solo entre lo que de verdad
+        // se llama asi: si hay coincidencias claras (el nombre empieza asi, una palabra, las
+        // iniciales o esta dentro), las letras sueltas en orden (`tss` en «tus.mp3») no cuentan.
+        let claras = hallados.iter().any(|h| h.0 >= CLARA);
+        if claras {
+            hallados.retain(|h| h.0 >= CLARA);
+        }
+        let _ = ahora;
+        let fecha = |n: u32| self.entradas[n as usize].modificado;
+        let orden = |a: &(i32, u32), b: &(i32, u32)| fecha(b.1).cmp(&fecha(a.1)).then(b.0.cmp(&a.0)).then(a.1.cmp(&b.1));
         mejores(&mut hallados, max, orden);
+        let total = hallados.len() as i32;
         hallados
             .iter()
-            .map(|&(puntos, n)| {
+            .enumerate()
+            .map(|(i, &(_, n))| {
                 let e = &self.entradas[n as usize];
                 // Solo para los que se ensenan: que letras resaltar.
                 let resaltado = p.puntuar(self.nombre(e), e.ascii).map(|c| c.posiciones).unwrap_or_default();
-                self.resultado(e, puntos, resaltado)
+                // Los puntos siguen el orden por fecha, para que nada lo reordene despues.
+                self.resultado(e, 1000 + total - i as i32, resaltado)
             })
             .collect()
     }
@@ -262,8 +274,13 @@ fn subsecuencia(q: &[u8], t: &[u8]) -> bool {
     false
 }
 
+/// Desde estos puntos una coincidencia es clara (esta dentro del nombre o mejor; ver
+/// [crate::coincidir]). Por debajo, solo letras sueltas en orden.
+const CLARA: i32 = 500;
+
 /// Lo tocado hace poco sube un poco, sin pasar por encima de una
 /// coincidencia mejor (empezar igual vale 150 mas que una palabra).
+#[allow(dead_code)]
 fn reciente(modificado: u32, ahora: u32) -> i32 {
     let dias = ahora.saturating_sub(modificado) / 86_400;
     match dias {
@@ -638,6 +655,19 @@ mod pruebas {
         let r = i.buscar("  ", 30, segundos(SystemTime::now()));
         assert_eq!(titulos(&r), vec!["nuevo.txt", "medio.txt", "viejo.txt"]);
         assert_eq!(titulos(&i.buscar("", 1, 0)), vec!["nuevo.txt"]);
+    }
+
+    #[test]
+    fn lo_mas_reciente_arriba() {
+        let raiz = temporal("por-fecha");
+        // «Tesis vieja» empieza igual (mejor coincidencia) pero es de hace 900 dias.
+        con_fecha(&raiz, "a/Tesis vieja.pdf", 900);
+        con_fecha(&raiz, "b/borrador tesis.docx", 0);
+        // Letras sueltas en orden: con coincidencias claras, fuera.
+        con_fecha(&raiz, "c/tXeXsXiXs.txt", 0);
+        let r = construir(&raiz, LIMITE).buscar("tesis", 5, segundos(SystemTime::now()));
+        assert_eq!(titulos(&r), vec!["borrador tesis.docx", "Tesis vieja.pdf"]);
+        assert!(r[0].puntos > r[1].puntos);
     }
 
     #[test]

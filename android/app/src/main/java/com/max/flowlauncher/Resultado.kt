@@ -19,6 +19,9 @@ class Resultado(
     val autocompletar: String?,
     val copiar: String?,
 ) {
+    /** El mismo resultado con otros puntos. */
+    fun conPuntos(p: Int) = Resultado(titulo, subtitulo, icono, p, accion, fuente, resaltado, accionPlugin, contexto, autocompletar, copiar)
+
     val pluginId: String? get() = if (fuente.startsWith("plugin:")) fuente.substring(7) else null
 
     /** Como lo recuerda el historial (igual que `clave_historial` en Rust). */

@@ -26,14 +26,18 @@ object Agenda {
     class Fila(val nombre: String, val app: Mensajeria, val que: String, val dato: Long, val tipo: String)
 
     /** Las apps que se conocen, por el principio de sus tipos MIME en la agenda. */
-    enum class Mensajeria(val prefijo: String, val paquete: String, val nombre: String, val claves: String) {
-        WHATSAPP("vnd.android.cursor.item/vnd.com.whatsapp.", "com.whatsapp", "WhatsApp", "whatsapp wsp wa"),
-        WHATSAPP_NEGOCIOS("vnd.android.cursor.item/vnd.com.whatsapp.w4b.", "com.whatsapp.w4b", "WhatsApp Business", "whatsapp wsp wa business"),
-        TELEGRAM("vnd.android.cursor.item/vnd.org.telegram.messenger.", "org.telegram.messenger", "Telegram", "telegram tg"),
-        SIGNAL("vnd.android.cursor.item/vnd.org.thoughtcrime.securesms.", "org.thoughtcrime.securesms", "Signal", "signal"),
-        VIBER("vnd.android.cursor.item/vnd.com.viber.voip.", "com.viber.voip", "Viber", "viber"),
-        MEET("vnd.android.cursor.item/com.google.android.apps.tachyon.", "com.google.android.apps.tachyon", "Meet", "meet duo"),
+    enum class Mensajeria(val prefijo: String, val paquetes: List<String>, val nombre: String, val claves: String) {
+        WHATSAPP("vnd.android.cursor.item/vnd.com.whatsapp.", listOf("com.whatsapp"), "WhatsApp", "whatsapp wsp wa"),
+        WHATSAPP_NEGOCIOS("vnd.android.cursor.item/vnd.com.whatsapp.w4b.", listOf("com.whatsapp.w4b"), "WhatsApp Business", "whatsapp wsp wa business"),
+        // Telegram tiene varias: la de la tienda, Beta, la de la web, Telegram X y Plus.
+        TELEGRAM("vnd.android.cursor.item/vnd.org.telegram.messenger.", Paquetes.TELEGRAM, "Telegram", "telegram tg"),
+        SIGNAL("vnd.android.cursor.item/vnd.org.thoughtcrime.securesms.", listOf("org.thoughtcrime.securesms"), "Signal", "signal"),
+        VIBER("vnd.android.cursor.item/vnd.com.viber.voip.", listOf("com.viber.voip"), "Viber", "viber"),
+        MEET("vnd.android.cursor.item/com.google.android.apps.tachyon.", listOf("com.google.android.apps.tachyon"), "Meet", "meet duo"),
         ;
+
+        /** La variante instalada (la primera que este), o null. */
+        fun instalada(c: Context): String? = Paquetes.instalado(c, paquetes)
 
         companion object {
             /** La de un tipo MIME (la de negocios antes que la normal: su prefijo es mas largo). */
@@ -136,4 +140,25 @@ object Agenda {
         }
         return emptyList()
     }
+}
+
+/** Las apps que tienen varias versiones con distinto paquete. */
+object Paquetes {
+    /** Telegram: tienda, Beta, web (telegram.org), Telegram X y Plus. */
+    val TELEGRAM = listOf(
+        "org.telegram.messenger", "org.telegram.messenger.beta", "org.telegram.messenger.web",
+        "org.thunderdog.challegram", "org.telegram.plus",
+    )
+    val WHATSAPP = listOf("com.whatsapp", "com.whatsapp.w4b")
+
+    private val cache = HashMap<String, Boolean>()
+
+    fun instalado(c: Context, lista: List<String>): String? = lista.firstOrNull { p ->
+        synchronized(cache) {
+            cache.getOrPut(p) { runCatching { c.packageManager.getPackageInfo(p, 0); true }.getOrDefault(false) }
+        }
+    }
+
+    /** Al instalar o quitar apps, volver a mirar. */
+    fun olvidar() = synchronized(cache) { cache.clear() }
 }

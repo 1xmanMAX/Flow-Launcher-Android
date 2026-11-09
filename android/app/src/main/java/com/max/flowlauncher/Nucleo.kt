@@ -47,6 +47,9 @@ object Nucleo {
     /** Palabras clave de las que se encargan apps proveedoras: sus plugins se apagan. */
     external fun cederPalabras(palabras: Array<String>)
 
+    /** Los puntos de mas por uso de cada clave (lo mas abierto sube). */
+    external fun puntosDeUso(consulta: String, claves: Array<String>): IntArray?
+
     /** La palabra clave de los archivos del movil (vacia: `c`). */
     external fun palabraArchivos(palabra: String)
 

@@ -210,6 +210,16 @@ impl Motor {
         r
     }
 
+    /// Los puntos de mas por uso de cada clave (lo que la app trae de fuera, como las filas de
+    /// PinDesk): lo que mas se abre, y lo elegido con esta misma consulta, sube.
+    pub fn puntos_de_uso(&self, consulta: &str, claves: &[String]) -> Vec<i32> {
+        let q = normalizar::cadena(recortar(consulta).trim());
+        match self.historial.lock() {
+            Ok(h) => claves.iter().map(|k| h.extra(&q, k)).collect(),
+            Err(_) => vec![0; claves.len()],
+        }
+    }
+
     /// La app avisa de lo elegido. Para un plugin se recuerda por su titulo.
     pub fn registrar_uso(&self, consulta: &str, accion: &str) {
         let copia = self.historial.lock().ok().and_then(|mut h| {

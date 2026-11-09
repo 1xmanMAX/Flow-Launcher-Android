@@ -8,7 +8,7 @@ use crate::indice::{Elemento, Tipo};
 use crate::motor::Motor;
 use crate::resultado::lista_json;
 use jni::objects::{JClass, JObjectArray, JString};
-use jni::sys::{jint, jstring};
+use jni::sys::{jint, jintArray, jstring};
 use jni::JNIEnv;
 use serde_json::{json, Value};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -301,4 +301,24 @@ pub extern "system" fn Java_com_max_flowlauncher_Nucleo_palabrasPlugin(mut env: 
             let _ = m.host.cambiar_palabras(&id, p);
         }
     });
+}
+
+/// `puntosDeUso(consulta, claves)`: los puntos de mas por uso de cada clave.
+#[no_mangle]
+pub extern "system" fn Java_com_max_flowlauncher_Nucleo_puntosDeUso(
+    mut env: JNIEnv,
+    _c: JClass,
+    consulta: JString,
+    claves: JObjectArray,
+) -> jintArray {
+    let q = texto(&mut env, &consulta);
+    let k = lista(&mut env, &claves);
+    let v = seguro(vec![0; k.len()], || motor().map(|m| m.puntos_de_uso(&q, &k)).unwrap_or_else(|| vec![0; k.len()]));
+    match env.new_int_array(v.len() as i32) {
+        Ok(a) => {
+            let _ = env.set_int_array_region(&a, 0, &v);
+            a.into_raw()
+        }
+        Err(_) => std::ptr::null_mut(),
+    }
 }

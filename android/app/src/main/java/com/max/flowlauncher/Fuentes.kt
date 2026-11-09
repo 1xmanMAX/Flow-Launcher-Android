@@ -113,17 +113,15 @@ object Fuentes {
      */
     private fun cargarMensajeria(c: Context) {
         val filas = Agenda.mensajeria(c)
-        val pm = c.packageManager
-        val instaladas = filas.map { it.app }.distinct().filter {
-            runCatching { pm.getPackageInfo(it.paquete, 0); true }.getOrDefault(false)
-        }.toSet()
-        val l = filas.filter { it.app in instaladas }
+        Paquetes.olvidar()
+        val instalada = filas.map { it.app }.distinct().associateWith { it.instalada(c) }
+        val l = filas.filter { instalada[it.app] != null }
         Nucleo.cargar(
             Nucleo.ATAJOS,
             l.map { "${it.nombre} · ${it.app.nombre}" }.toTypedArray(),
             l.map { it.que }.toTypedArray(),
             l.map { intentUri(Agenda.intent(it)) }.toTypedArray(),
-            l.map { "pkg:${it.app.paquete}" }.toTypedArray(),
+            l.map { "pkg:${instalada[it.app]}" }.toTypedArray(),
             l.map { "${it.app.claves} ${it.que}" }.toTypedArray(),
         )
     }

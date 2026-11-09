@@ -244,7 +244,12 @@ class BuscarActivity : Activity() {
             val dePlugins = if (!hayPlugins) emptyList() else runCatching {
                 Resultado.lista(JSONArray(Nucleo.consultarPlugins(q, 20, 1500)))
             }.getOrElse { emptyList() }
-            val de = dePlugins + (runCatching { deApps?.get() }.getOrNull() ?: emptyList())
+            // Lo de las apps proveedoras (PinDesk) tambien aprende: lo que mas abres, arriba.
+            val deProveedores = (runCatching { deApps?.get() }.getOrNull() ?: emptyList()).let { l ->
+                val extra = runCatching { Nucleo.puntosDeUso(q, l.map { it.claveHistorial }.toTypedArray()) }.getOrNull()
+                if (extra == null || extra.size != l.size) l else l.mapIndexed { i, x -> x.conPuntos(x.puntos + extra[i]) }
+            }
+            val de = dePlugins + deProveedores
             val ev = runCatching { JSONArray(Nucleo.eventos()) }.getOrElse { JSONArray() }
             App.principal.post {
                 if (cerrada || mio != turno) return@post
