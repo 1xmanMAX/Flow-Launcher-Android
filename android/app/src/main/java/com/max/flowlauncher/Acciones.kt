@@ -6,6 +6,7 @@ import android.content.ClipboardManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.provider.Settings
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraManager
 import android.net.Uri
@@ -70,11 +71,28 @@ object Acciones {
     private fun archivo(c: Context, ruta: String, elegir: Boolean = false): Boolean {
         if (ruta.endsWith("/")) return carpeta(c, ruta.trimEnd('/'))
         val f = File(ruta)
+        if (!elegir && f.name.endsWith(".apk", ignoreCase = true)) return instalar(c, f)
         val i = Intent(Intent.ACTION_VIEW)
             .setDataAndType(ProveedorDeArchivos.uri(c, f), ProveedorDeArchivos.tipo(f.name) ?: "*/*")
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         // «Abrir con…»: siempre la lista de apps, aunque haya una por defecto.
         return abrir(c, if (elegir) Intent.createChooser(i, "Abrir «${f.name}» con") else i)
+    }
+
+    /**
+     * Instalar un APK: Android solo abre su instalador si la app que se lo pide tiene
+     * «Instalar apps desconocidas». Sin ese permiso el instalador se cerraba sin decir
+     * nada; ahora, la primera vez, se lleva a esa pantalla y se explica.
+     */
+    private fun instalar(c: Context, f: File): Boolean {
+        if (Build.VERSION.SDK_INT >= 26 && !c.packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(c, "Activa «Permitir de esta fuente» y vuelve a tocar «${f.name}»", Toast.LENGTH_LONG).show()
+            return abrir(c, Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${c.packageName}")))
+        }
+        val i = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(ProveedorDeArchivos.uri(c, f), ProveedorDeArchivos.APK)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return abrir(c, i)
     }
 
     /** PinDesk (PixPin) instalado: su entrada para recibir archivos. */

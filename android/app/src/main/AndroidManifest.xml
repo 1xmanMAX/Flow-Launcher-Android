@@ -12,6 +12,8 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <!-- «timer 10m», «alarma 7:30»: el reloj del sistema. -->
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
+    <!-- Instalar un APK encontrado con «c» (Android pide que la app que lo abre lo tenga). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <!-- Opcional: buscar archivos («c tesis»). Hasta Android 10, el permiso
          normal; desde Android 11, «Acceso a todos los archivos». -->
     <uses-permission

@@ -65,6 +65,10 @@ paso "Instalacion"
 # Un archivo para buscar con «c», y permiso de acceso a todos los archivos.
 "$adb" shell 'mkdir -p /sdcard/Download/Universidad && echo hola > "/sdcard/Download/Universidad/Tesis final.pdf"'
 "$adb" shell appops set --uid com.max.flowlauncher MANAGE_EXTERNAL_STORAGE allow >/dev/null 2>&1 || true
+# Un APK para instalar desde «c» (el de la app de prueba) y su permiso.
+prueba_apk_c="$raiz/android/proveedor-prueba/build/outputs/apk/debug/proveedor-prueba-debug.apk"
+[[ -f "$prueba_apk_c" ]] && "$adb" push "$prueba_apk_c" /sdcard/Download/AppDePrueba.apk >/dev/null
+"$adb" shell appops set com.max.flowlauncher REQUEST_INSTALL_PACKAGES allow >/dev/null 2>&1 || true
 "$adb" logcat -c
 libdir="$("$adb" shell dumpsys package $pkg | sed -n 's/.*legacyNativeLibraryDir=//p' | tr -d '\r' | head -1)"
 "$adb" shell ls -l "$libdir/x86_64/" | tee "$salida/nativelibs.txt"
@@ -127,6 +131,12 @@ tocar buscar-archivos "Tesis final.pdf" largo; volcar menu-archivo
 espera menu-archivo "Compartir"; espera menu-archivo "Copiar la ruta"
 tocar menu-archivo "Compartir"; volcar compartir
 espera compartir "Tesis final.pdf"
+"$adb" shell input keyevent KEYCODE_BACK; sleep 2
+"$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 4
+# Tocar un APK abre el instalador del sistema.
+consulta buscar-apk "c%sappdeprueba" "AppDePrueba.apk"
+tocar buscar-apk "AppDePrueba.apk"; volcar instalador
+grep -qiE 'packageinstaller' "$salida/instalador.xml" && echo "OK  instalador: se abre" || falla "instalador: no se abre"
 "$adb" shell input keyevent KEYCODE_BACK; sleep 2
 "$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 4
 espera buscar-tx "aG9sYQ=="

@@ -30,9 +30,13 @@ class ProveedorDeArchivos : ContentProvider() {
             Uri.Builder().scheme("content").authority(autoridad(c)).path(f.absolutePath).build()
 
         /** `application/pdf` de `x.PDF`; null si no se sabe. */
+        const val APK = "application/vnd.android.package-archive"
+
         fun tipo(nombre: String): String? {
             val ext = nombre.substringAfterLast('.', "").lowercase()
             if (ext.isEmpty()) return null
+            // Algunos moviles no lo tienen en su tabla, y sin el tipo exacto no sale el instalador.
+            if (ext == "apk") return APK
             return MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext)
         }
 
