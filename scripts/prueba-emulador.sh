@@ -106,7 +106,7 @@ paso "BuscarActivity (arranque en frio) y consultas"
 sleep 3
 consulta() {  # $1 = nombre, $2 = texto (espacios como %s), $3 = resultado esperado
   "$adb" shell input keyevent KEYCODE_MOVE_END
-  for _ in $(seq 1 15); do "$adb" shell input keyevent KEYCODE_DEL; done
+  "$adb" shell input keyevent --longpress KEYCODE_DEL >/dev/null 2>&1; for _ in $(seq 1 60); do echo KEYCODE_DEL; done | xargs "$adb" shell input keyevent
   "$adb" shell input text "$2"; sleep 5
   volcar "$1"; espera "$1" "$3"
 }
