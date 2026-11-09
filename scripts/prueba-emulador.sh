@@ -70,7 +70,7 @@ prueba_apk_c="$raiz/android/proveedor-prueba/build/outputs/apk/debug/proveedor-p
 [[ -f "$prueba_apk_c" ]] && "$adb" push "$prueba_apk_c" /sdcard/Download/AppDePrueba.apk >/dev/null
 "$adb" shell appops set com.max.flowlauncher REQUEST_INSTALL_PACKAGES allow >/dev/null 2>&1 || true
 # Dos con el mismo nombre y distinta fecha: el nuevo tiene que salir primero.
-"$adb" shell 'echo a > "/sdcard/Download/Informe viejo.pdf"; touch -d 2020-01-01T10:00:00 "/sdcard/Download/Informe viejo.pdf"; echo b > "/sdcard/Download/informe nuevo.pdf"'
+"$adb" shell 'echo a > "/sdcard/Download/Informe viejo.pdf"; touch -d 2020-01-01T10:00:00 "/sdcard/Download/Informe viejo.pdf"; sleep 2; echo b > "/sdcard/Download/informe nuevo.pdf"; touch -d 2019-06-01T10:00:00 "/sdcard/Download/informe nuevo.pdf"'
 "$adb" logcat -c
 libdir="$("$adb" shell dumpsys package $pkg | sed -n 's/.*legacyNativeLibraryDir=//p' | tr -d '\r' | head -1)"
 "$adb" shell ls -l "$libdir/x86_64/" | tee "$salida/nativelibs.txt"

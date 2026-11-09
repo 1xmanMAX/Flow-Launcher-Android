@@ -346,6 +346,34 @@ fn tamano(b: u64) -> String {
     format!("{v:.1} {u}").replace('.', ",")
 }
 
+/// **Cuando llego el archivo al movil**, no la fecha que trae: muchos navegadores, al descargar,
+/// le ponen la fecha del servidor (de hace meses), y lo recien descargado salia 3.º o 4.º (el
+/// usuario, 9-nov-2026). La del cambio del inodo (`ctime`) es la de cuando se escribio aqui; se
+/// usa la mas nueva de las dos.
+fn cuando_llego(m: &std::fs::Metadata) -> u32 {
+    let modificado = m.modified().map(segundos).unwrap_or(0);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let cambio = u32::try_from(m.ctime().max(0)).unwrap_or(u32::MAX);
+        return modificado.max(cambio);
+    }
+    #[allow(unreachable_code)]
+    modificado
+}
+
+/// Las carpetas donde suele aparecer algo nuevo (descargas, fotos, capturas, documentos y lo
+/// que llega por WhatsApp): si alguna cambio desde el ultimo indice, se rehace ya, sin esperar
+/// a [EDAD_MAXIMA]. Mirarlas cuesta unas pocas llamadas al sistema.
+const VIGILADAS: &[&str] = &[
+    "Download", "Documents", "DCIM/Camera", "Pictures", "Pictures/Screenshots", "DCIM/Screenshots", "Movies", "Music",
+    "Android/media/com.whatsapp/WhatsApp/Media/WhatsApp Documents", "Android/media/org.telegram.messenger/Telegram/Telegram Files",
+];
+
+fn hay_cambios(raiz: &Path, desde: u32) -> bool {
+    VIGILADAS.iter().any(|d| std::fs::metadata(raiz.join(d)).is_ok_and(|m| cuando_llego(&m) >= desde))
+}
+
 fn segundos(t: SystemTime) -> u32 {
     t.duration_since(UNIX_EPOCH).map(|d| d.as_secs().min(u32::MAX as u64) as u32).unwrap_or(0)
 }
@@ -391,7 +419,7 @@ pub fn construir(raiz: &Path, limite: usize) -> IndiceArchivos {
                 continue;
             }
             let (modificado, tam) = match d.metadata() {
-                Ok(m) => (m.modified().map(segundos).unwrap_or(0), if carpeta { 0 } else { m.len() }),
+                Ok(m) => (cuando_llego(&m), if carpeta { 0 } else { m.len() }),
                 Err(_) => (0, 0),
             };
             let n = idx.agregar(&nombre, padre, carpeta, modificado, tam, &mut buf);
@@ -412,6 +440,8 @@ struct Control {
     raiz: Option<PathBuf>,
     construyendo: bool,
     hecho: Option<Instant>,
+    /// Cuando empezo el ultimo indice (segundos): lo que cambie despues obliga a rehacerlo.
+    hecho_en: Option<u32>,
 }
 
 #[derive(Debug)]
@@ -441,7 +471,7 @@ impl Archivos {
         Archivos {
             c: Arc::new(Comun {
                 indice: RwLock::new(Arc::new(IndiceArchivos::default())),
-                control: Mutex::new(Control { raiz: None, construyendo: false, hecho: None }),
+                control: Mutex::new(Control { raiz: None, construyendo: false, hecho: None, hecho_en: None }),
                 activo: AtomicBool::new(false),
                 edad_maxima,
             }),
@@ -457,13 +487,15 @@ impl Archivos {
             return;
         }
         let misma = c.raiz.as_deref() == Some(raiz);
-        let fresco = c.hecho.is_some_and(|t| t.elapsed() < self.c.edad_maxima);
+        let fresco = c.hecho.is_some_and(|t| t.elapsed() < self.c.edad_maxima)
+            && !c.hecho_en.is_some_and(|desde| hay_cambios(raiz, desde));
         if misma && fresco {
             return;
         }
         c.raiz = Some(raiz.to_path_buf());
         c.construyendo = true;
         drop(c);
+        let inicio = segundos(SystemTime::now());
         let comun = self.c.clone();
         let raiz = raiz.to_path_buf();
         let lanzado = std::thread::Builder::new().name("flow-archivos".into()).spawn(move || {
@@ -475,6 +507,7 @@ impl Archivos {
             if let Ok(mut c) = comun.control.lock() {
                 c.construyendo = false;
                 c.hecho = Some(Instant::now());
+                c.hecho_en = Some(inicio);
             }
         });
         if lanzado.is_err() {
@@ -565,6 +598,13 @@ mod pruebas {
         fs::write(&p, b"hola").unwrap();
     }
 
+    /// Llega al movil ahora (y se espera un segundo, la resolucion del `ctime`, para que el
+    /// siguiente llegue despues), con la fecha que traiga.
+    fn llega(raiz: &Path, rel: &str, hace_dias: u64) {
+        con_fecha(raiz, rel, hace_dias);
+        std::thread::sleep(Duration::from_millis(1100));
+    }
+
     fn con_fecha(raiz: &Path, rel: &str, hace_dias: u64) {
         crear(raiz, rel);
         let t = SystemTime::now() - Duration::from_secs(hace_dias * 86_400);
@@ -648,9 +688,10 @@ mod pruebas {
     #[test]
     fn sin_consulta_lo_ultimo_modificado() {
         let raiz = temporal("recientes");
-        con_fecha(&raiz, "viejo.txt", 400);
-        con_fecha(&raiz, "a/medio.txt", 10);
-        con_fecha(&raiz, "b/c/nuevo.txt", 0);
+        // En el orden en que llegan.
+        llega(&raiz, "viejo.txt", 400);
+        llega(&raiz, "a/medio.txt", 10);
+        llega(&raiz, "b/c/nuevo.txt", 0);
         let i = construir(&raiz, LIMITE);
         let r = i.buscar("  ", 30, segundos(SystemTime::now()));
         assert_eq!(titulos(&r), vec!["nuevo.txt", "medio.txt", "viejo.txt"]);
@@ -661,13 +702,24 @@ mod pruebas {
     fn lo_mas_reciente_arriba() {
         let raiz = temporal("por-fecha");
         // «Tesis vieja» empieza igual (mejor coincidencia) pero es de hace 900 dias.
-        con_fecha(&raiz, "a/Tesis vieja.pdf", 900);
-        con_fecha(&raiz, "b/borrador tesis.docx", 0);
+        llega(&raiz, "a/Tesis vieja.pdf", 900);
+        llega(&raiz, "b/borrador tesis.docx", 0);
         // Letras sueltas en orden: con coincidencias claras, fuera.
         con_fecha(&raiz, "c/tXeXsXiXs.txt", 0);
         let r = construir(&raiz, LIMITE).buscar("tesis", 5, segundos(SystemTime::now()));
         assert_eq!(titulos(&r), vec!["borrador tesis.docx", "Tesis vieja.pdf"]);
         assert!(r[0].puntos > r[1].puntos);
+    }
+
+    /// Descargado ahora pero con la fecha del servidor (de hace un ano): sale el primero.
+    #[cfg(unix)]
+    #[test]
+    fn lo_recien_descargado_primero_aunque_traiga_fecha_vieja() {
+        let raiz = temporal("descarga");
+        llega(&raiz, "Download/factura enero.pdf", 30);
+        llega(&raiz, "Download/factura marzo.pdf", 365);
+        let r = construir(&raiz, LIMITE).buscar("factura", 5, segundos(SystemTime::now()));
+        assert_eq!(titulos(&r), vec!["factura marzo.pdf", "factura enero.pdf"]);
     }
 
     #[test]

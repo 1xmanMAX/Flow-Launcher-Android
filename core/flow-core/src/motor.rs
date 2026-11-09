@@ -199,8 +199,11 @@ impl Motor {
             }
             None => (self.host.consultar(texto, espera), max),
         };
-        // Lo elegido antes con esta consulta, primero (como en lo local).
-        if let Ok(h) = self.historial.lock() {
+        let son_archivos = self.consulta_archivos(texto).is_some();
+        // Lo elegido antes con esta consulta, primero (como en lo local). Los archivos no: van
+        // siempre del mas nuevo al mas viejo (el usuario: «quiero acceder primero a lo mas
+        // reciente»); lo usado no puede dejar lo recien descargado 3.º o 4.º.
+        if let Ok(h) = self.historial.lock().map_err(|_| ()).and_then(|h| if son_archivos { Err(()) } else { Ok(h) }) {
             let q = normalizar::cadena(texto.trim());
             for x in r.iter_mut() {
                 x.puntos += h.extra(&q, &clave_historial(x));
@@ -215,7 +218,9 @@ impl Motor {
     pub fn puntos_de_uso(&self, consulta: &str, claves: &[String]) -> Vec<i32> {
         let q = normalizar::cadena(recortar(consulta).trim());
         match self.historial.lock() {
-            Ok(h) => claves.iter().map(|k| h.extra(&q, k)).collect(),
+            // Solo lo elegido con esta misma consulta: las apps proveedoras (PinDesk) ya ordenan
+            // por fecha, y el uso general dejaba lo mas reciente por debajo.
+            Ok(h) => claves.iter().map(|k| h.elegido(&q, k)).collect(),
             Err(_) => vec![0; claves.len()],
         }
     }

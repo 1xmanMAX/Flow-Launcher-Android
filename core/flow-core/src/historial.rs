@@ -98,6 +98,15 @@ impl Historial {
         extra
     }
 
+    /// Solo lo de haberlo elegido con esta misma consulta (sin contar lo usado en general).
+    pub fn elegido(&self, consulta_n: &str, accion: &str) -> i32 {
+        if !consulta_n.is_empty() && self.elegidos.get(consulta_n).is_some_and(|a| a == accion) {
+            400
+        } else {
+            0
+        }
+    }
+
     /// Las acciones mas usadas, para cuando no hay nada escrito.
     pub fn mas_usadas(&self, max: usize) -> Vec<(&str, i32)> {
         let mut v: Vec<(&str, i32)> = self
