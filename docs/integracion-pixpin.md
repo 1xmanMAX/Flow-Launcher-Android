@@ -38,7 +38,10 @@ deja de llenar el índice del buscador del teléfono (AppSearch). En la edición
 Lo de PinDesk que aún no hace el lanzador (ver «Lo del PC que aquí no está» en `docs/flow-buscador.md`): pegar
 imágenes del portapapeles (`[img 01]`), conservar o borrar capturas, y el reproductor flotante de audio.
 
-## Pendiente en PinDesk: compartir un archivo desde el buscador
+## Hecho en PinDesk 0.190.0: compartir un archivo desde el buscador
+
+✅ La seña `pindesk://atajo/compartir/<id>` y la fila «Compartir» (la primera) en el menú de los mensajes con archivo.
+Lo de abajo queda como referencia de cómo se hizo.
 
 En el buscador, mantener pulsado un archivo del móvil (`c tesis`) ya saca
 **Compartir** como primera opción. Para que pase lo mismo con los archivos de
