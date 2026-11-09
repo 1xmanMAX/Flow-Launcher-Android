@@ -128,10 +128,6 @@ consulta cmd-sugerir "tim" "Temporizador  ·  timer"
 consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 consulta buscar-pixpin "p%st%scomprar%span" "Apuntar «comprar pan» como tarea"
 consulta buscar-archivos "c%stesis" "Tesis final.pdf"
-consulta buscar-fecha "c%sinforme" "informe nuevo.pdf"
-n1=$(grep -n "informe nuevo.pdf" "$salida/buscar-fecha.txt" | head -1 | cut -d: -f1)
-n2=$(grep -n "Informe viejo.pdf" "$salida/buscar-fecha.txt" | head -1 | cut -d: -f1)
-[[ -n "$n1" && -n "$n2" && "$n1" -lt "$n2" ]] && echo "OK  orden por fecha: lo nuevo arriba" || falla "orden por fecha ($n1, $n2)"
 # Mantener pulsado el archivo: el menu con «Compartir», y compartir abre la lista de apps.
 tocar buscar-archivos "Tesis final.pdf" largo; volcar menu-archivo
 espera menu-archivo "Compartir"; espera menu-archivo "Copiar la ruta"
@@ -139,6 +135,10 @@ tocar menu-archivo "Compartir"; volcar compartir
 espera compartir "Tesis final.pdf"
 "$adb" shell input keyevent KEYCODE_BACK; sleep 2
 "$adb" shell am start -W -n $pkg/.BuscarActivity >/dev/null; sleep 4
+consulta buscar-fecha "c%sinforme" "informe nuevo.pdf"
+n1=$(grep -n "informe nuevo.pdf" "$salida/buscar-fecha.txt" | head -1 | cut -d: -f1)
+n2=$(grep -n "Informe viejo.pdf" "$salida/buscar-fecha.txt" | head -1 | cut -d: -f1)
+[[ -n "$n1" && -n "$n2" && "$n1" -lt "$n2" ]] && echo "OK  orden por fecha: lo nuevo arriba" || falla "orden por fecha ($n1, $n2)"
 # Tocar un APK abre el instalador del sistema.
 consulta buscar-apk "c%sappdeprueba" "AppDePrueba.apk"
 tocar buscar-apk "AppDePrueba.apk"; volcar instalador
