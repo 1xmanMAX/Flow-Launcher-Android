@@ -12,6 +12,8 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
+import android.graphics.drawable.AdaptiveIconDrawable
+import android.os.Build
 
 /**
  * El cuadro de color con la extension escrita (`pdf` en rojo, `docx` en
@@ -112,7 +114,15 @@ object Insignias {
         val oscuro = (c.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
             Configuration.UI_MODE_NIGHT_YES
         val color = 0xFF000000.toInt() or rgb
-        return Suave(color, if (oscuro) 0x33 else 0x1F, simbolo.mutate().apply { setTint(color) }, c.resources.displayMetrics.density)
+        // Un icono adaptativo (los atajos de PinDesk) trae un fondo opaco: pintarlo entero de un
+        // color daba un cuadrado relleno. Solo su primer plano, el simbolo, que ocupa el centro
+        // (48 de 108): se dibuja mas grande para que el simbolo quede como los nuestros.
+        val adaptativo = Build.VERSION.SDK_INT >= 26 && simbolo is AdaptiveIconDrawable
+        val s = if (adaptativo) (simbolo as AdaptiveIconDrawable).foreground ?: simbolo else simbolo
+        return Suave(
+            color, if (oscuro) 0x33 else 0x1F, s.mutate().apply { setTint(color) }, c.resources.displayMetrics.density,
+            escala = if (adaptativo) 108f / 48f else 1f,
+        )
     }
 
     /** `web`, `calc`, `ic_compartir`... o null si no es una de las nuestras. */
@@ -198,7 +208,7 @@ object Insignias {
     }
 
     /** Una funcion: cuadrado de esquinas redondeadas en su color muy claro y el simbolo en su color. */
-    private class Suave(color: Int, alfa: Int, val simbolo: Drawable?, d: Float) : Drawable() {
+    private class Suave(color: Int, alfa: Int, val simbolo: Drawable?, d: Float, val escala: Float = 1f) : Drawable() {
         private val fondo = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.color = (alfa shl 24) or (color and 0xFFFFFF) }
         private val lado = (36 * d).toInt()
         private val caja = RectF()
@@ -211,8 +221,11 @@ object Insignias {
             c.drawRoundRect(caja, r, r, fondo)
             val s = simbolo ?: return
             // El simbolo, a algo mas de la mitad.
-            val t = (l * 0.235f).toInt()
-            s.setBounds(caja.left.toInt() + t, caja.top.toInt() + t, caja.right.toInt() - t, caja.bottom.toInt() - t)
+            // (Un primer plano adaptativo, [escala] veces mayor: su simbolo queda del mismo tamano.)
+            val lado = l * 0.53f * escala
+            val x = caja.centerX() - lado / 2
+            val y = caja.centerY() - lado / 2
+            s.setBounds(x.toInt(), y.toInt(), (x + lado).toInt(), (y + lado).toInt())
             s.draw(c)
         }
 
