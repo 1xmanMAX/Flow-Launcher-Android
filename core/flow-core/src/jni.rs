@@ -279,3 +279,26 @@ pub extern "system" fn Java_com_max_flowlauncher_Nucleo_cederPalabras(mut env: J
         }
     });
 }
+
+/// `palabraArchivos("f")`: la palabra clave de los archivos del movil.
+#[no_mangle]
+pub extern "system" fn Java_com_max_flowlauncher_Nucleo_palabraArchivos(mut env: JNIEnv, _c: JClass, p: JString) {
+    let p = texto(&mut env, &p);
+    seguro((), || {
+        if let Some(m) = motor() {
+            m.cambiar_palabra_archivos(&p);
+        }
+    });
+}
+
+/// `palabrasPlugin(id, ["tx"])`: las palabras clave de un plugin (vacio: las suyas).
+#[no_mangle]
+pub extern "system" fn Java_com_max_flowlauncher_Nucleo_palabrasPlugin(mut env: JNIEnv, _c: JClass, id: JString, palabras: JObjectArray) {
+    let id = texto(&mut env, &id);
+    let p = lista(&mut env, &palabras);
+    seguro((), || {
+        if let Some(m) = motor() {
+            let _ = m.host.cambiar_palabras(&id, p);
+        }
+    });
+}

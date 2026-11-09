@@ -55,7 +55,9 @@ object Comandos {
         val t = q.trimStart()
         val esp = t.indexOf(' ')
         if (esp <= 0) return null
-        val palabra = t.substring(0, esp).lowercase()
+        val escrita = t.substring(0, esp).lowercase()
+        // La palabra puede estar cambiada en Ajustes (`w` en vez de `wa`): se busca el comando.
+        val palabra = COMANDOS.firstOrNull { palabraDe(c, it).equals(escrita, ignoreCase = true) }?.palabra ?: return null
         val resto = t.substring(esp + 1).trim()
         val r = ArrayList<Resultado>()
         when (palabra) {
@@ -73,7 +75,7 @@ object Comandos {
         }
         if (r.isEmpty()) {
             val cmd = COMANDOS.first { it.palabra == palabra }
-            r += fila(c, cmd.nombre, cmd.ayuda, "", null)
+            r += fila(c, cmd.nombre, ayudaDe(c, cmd), "", null)
         }
         // En el orden en que se anaden, por encima de todo.
         return r.mapIndexed { i, x -> x.copia(6000 - i) }
@@ -83,14 +85,26 @@ object Comandos {
     fun sugerencias(c: Context, q: String): List<Resultado> {
         val t = q.trim().lowercase()
         if (t.length < 2 || t.contains(' ')) return emptyList()
-        return COMANDOS.filter { it.palabra.startsWith(t) }.map {
+        return COMANDOS.map { it to palabraDe(c, it) }.filter { (_, p) -> p.startsWith(t) }.map { (it, palabra) ->
             Resultado(
-                titulo = "${it.nombre}  ·  ${it.palabra}", subtitulo = it.ayuda, icono = "res:ic_buscar",
-                puntos = if (it.palabra == t) 900 else 300, accion = "consulta:${it.palabra} ", fuente = "comando",
-                resaltado = IntArray(0), accionPlugin = null, contexto = null, autocompletar = "${it.palabra} ", copiar = null,
+                titulo = "${it.nombre}  ·  $palabra", subtitulo = ayudaDe(c, it), icono = "res:ic_buscar",
+                puntos = if (palabra == t) 900 else 300, accion = "consulta:$palabra ", fuente = "comando",
+                resaltado = IntArray(0), accionPlugin = null, contexto = null, autocompletar = "$palabra ", copiar = null,
             )
         }
     }
+
+    /** La palabra de un comando: la de Ajustes, o la de siempre. */
+    private fun palabraDe(c: Context, cmd: Comando) = Palabras.de(c, "cmd:${cmd.palabra}", cmd.palabra)
+
+    /** La ayuda con la palabra que se usa de verdad. */
+    private fun ayudaDe(c: Context, cmd: Comando): String {
+        val p = palabraDe(c, cmd)
+        return if (p == cmd.palabra) cmd.ayuda else cmd.ayuda.replace(Regex("(^|· )${Regex.escape(cmd.palabra)}(?= )")) { it.value.replace(cmd.palabra, p) }
+    }
+
+    /** Para Ajustes → Palabras clave: (comando, nombre, palabra de siempre). */
+    fun lista(): List<Triple<String, String, String>> = COMANDOS.map { Triple(it.palabra, it.nombre, it.palabra) }
 
     // --- cada comando ---
 
@@ -101,13 +115,14 @@ object Comandos {
         }
         val (numero, mensaje) = numeroDelante(resto)
         if (numero != null) {
-            r += fila(c, "WhatsApp a $numero", mensaje.ifEmpty { "Abrir el chat" }.let { citar(it) },
-                "url:https://wa.me/${internacional(c, numero)}${texto("?text=", mensaje)}", WHATSAPP)
+            // Un numero que no esta en la agenda: su chat, como tocar su enlace de WhatsApp.
+            r += fila(c, "Chat de WhatsApp con $numero", if (mensaje.isEmpty()) "Abrir su chat, aunque no esté en tus contactos" else citar(mensaje),
+                chatDeWhatsApp(c, internacional(c, numero), mensaje), WHATSAPP)
         }
         for ((p, msg) in Agenda.buscar(resto)) {
             val tel = p.telefonos.firstOrNull() ?: continue
             r += fila(c, "WhatsApp a ${p.nombre}", "${citar(msg.ifEmpty { "Abrir el chat" })} · $tel",
-                "url:https://wa.me/${internacional(c, tel)}${texto("?text=", msg)}", WHATSAPP)
+                chatDeWhatsApp(c, internacional(c, tel), msg), WHATSAPP)
         }
         r += fila(c, "Enviar «$resto» por WhatsApp", "Eliges el chat", enviar(resto, WHATSAPP), WHATSAPP)
     }
@@ -219,7 +234,18 @@ object Comandos {
         return n to m.groupValues[2].trim()
     }
 
-    /** El numero con prefijo de pais, solo cifras (lo que pide wa.me). */
+    /**
+     * El chat con [numero] (con prefijo de pais, solo cifras) en la app de WhatsApp,
+     * directo: su enlace oficial con el paquete puesto, para que no pase por el navegador
+     * (en algunos moviles `wa.me` abre antes una pagina web). Sin WhatsApp, el enlace.
+     */
+    private fun chatDeWhatsApp(c: Context, numero: String, mensaje: String): String {
+        val url = "https://api.whatsapp.com/send?phone=$numero${texto("&text=", mensaje)}"
+        val app = listOf(WHATSAPP, "com.whatsapp.w4b").firstOrNull { instalada(c, it) } ?: return "url:$url"
+        return intent(Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(app))
+    }
+
+    /** El numero con prefijo de pais, solo cifras (lo que pide WhatsApp). */
     private fun internacional(c: Context, n: String): String {
         val iso = runCatching {
             val tm = c.getSystemService(TelephonyManager::class.java)

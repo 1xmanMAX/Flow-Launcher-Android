@@ -179,3 +179,15 @@ fn una_palabra_cedida_a_una_app_apaga_el_plugin() {
     // Los demas siguen.
     assert!(m.consultar("t1 hola", 10).plugins);
 }
+
+#[test]
+fn cambiar_la_palabra_clave_de_un_plugin() {
+    let (m, _) = motor("palabras");
+    m.host.cambiar_palabras("V2", vec!["mayus".into()]).unwrap();
+    assert!(!m.consultar("t2 hola", 10).plugins);
+    let r = m.consultar_plugins("mayus hola", 10, Duration::from_secs(5));
+    assert_eq!(r[0].titulo, "HOLA");
+    // Vacio: vuelve la del plugin.json.
+    m.host.cambiar_palabras("V2", vec![]).unwrap();
+    assert!(m.consultar("t2 hola", 10).plugins);
+}

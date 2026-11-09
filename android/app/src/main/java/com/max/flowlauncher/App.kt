@@ -80,6 +80,8 @@ class App : Application() {
                     applicationInfo.nativeLibraryDir,
                     plugins.absolutePath,
                 )
+                // Las palabras clave cambiadas en Ajustes (archivos, plugins).
+                runCatching { Palabras.aplicar(this) }
             } catch (e: Throwable) {
                 Log.e("Flow", "No se pudo iniciar el nucleo", e)
             } finally {

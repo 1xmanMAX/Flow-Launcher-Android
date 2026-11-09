@@ -115,7 +115,7 @@ consulta buscar-calc "2+2" "2+2 — toca para copiar"
 consulta buscar-tx "tx%shola" "HOLA"
 # Comandos con otras apps (sin plugins).
 consulta cmd-timer "timer%s10m" "Temporizador de 10 min"
-consulta cmd-wa "wa%s987654321%shola" "WhatsApp a 987654321"
+consulta cmd-wa "wa%s987654321%shola" "Chat de WhatsApp con 987654321"
 espera cmd-wa "Enviar «987654321 hola» por WhatsApp"
 consulta cmd-cal "cal%sreunion%smanana%s10:30" "Evento: reunion"
 consulta cmd-sugerir "tim" "Temporizador  ·  timer"

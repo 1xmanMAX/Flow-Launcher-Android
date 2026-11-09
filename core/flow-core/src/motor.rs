@@ -29,6 +29,8 @@ pub struct Motor {
     pub host: Host,
     /// `c <nombre>`: los archivos del almacenamiento.
     pub archivos: Archivos,
+    /// La palabra clave de los archivos (`c` si no se cambia en Ajustes).
+    palabra_archivos: RwLock<String>,
     dir: PathBuf,
 }
 
@@ -58,6 +60,7 @@ impl Motor {
             busquedas: RwLock::new(busquedas),
             host: Host::nuevo(dir.join("ajustes-plugins"), dir_libs),
             archivos: Archivos::default(),
+            palabra_archivos: RwLock::new(PALABRA_ARCHIVOS.into()),
             dir: dir.to_path_buf(),
         }
     }
@@ -123,7 +126,22 @@ impl Motor {
     /// Lo escrito tras `c ` si es una busqueda de archivos (y estan activos).
     fn consulta_archivos<'a>(&self, texto: &'a str) -> Option<&'a str> {
         let (primera, resto) = texto.trim_start().split_once(' ')?;
-        (primera.eq_ignore_ascii_case(PALABRA_ARCHIVOS) && self.archivos.activo()).then_some(resto)
+        let p = self.palabra_archivos();
+        (primera.eq_ignore_ascii_case(&p) && self.archivos.activo()).then_some(resto)
+    }
+
+    /// La palabra clave de los archivos.
+    pub fn palabra_archivos(&self) -> String {
+        self.palabra_archivos.read().map(|p| p.clone()).unwrap_or_else(|_| PALABRA_ARCHIVOS.into())
+    }
+
+    /// Cambiarla (Ajustes → Palabras clave). Vacia o con espacios: la de siempre.
+    pub fn cambiar_palabra_archivos(&self, p: &str) {
+        let p = p.trim();
+        let p = if p.is_empty() || p.contains(char::is_whitespace) { PALABRA_ARCHIVOS } else { p };
+        if let Ok(mut x) = self.palabra_archivos.write() {
+            *x = p.to_string();
+        }
     }
 
     /// Escribir `yo` sugiere `yt` (YouTube) y el nombre de cada plugin, para
@@ -152,7 +170,8 @@ impl Motor {
             });
         };
         if self.archivos.activo() {
-            sugerir("Archivos del móvil", PALABRA_ARCHIVOS, "archivos", "carpeta".into());
+            let p = self.palabra_archivos();
+            sugerir("Archivos del móvil", &p, "archivos", "carpeta".into());
         }
         if let Ok(b) = self.busquedas.read() {
             for b in b.iter().filter(|b| b.activa) {

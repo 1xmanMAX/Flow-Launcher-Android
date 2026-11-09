@@ -34,7 +34,7 @@ object Proveedores {
     /** Las acciones `call:` llevan en `accion` esto, la autoridad y el metodo. */
     const val LLAMAR = "llamar:"
 
-    class Proveedor(val paquete: String, val autoridad: String, val palabra: String, val nombre: String)
+    class Proveedor(val paquete: String, val autoridad: String, val palabra: String, val nombre: String, val palabraOriginal: String = palabra)
 
     /** A quien preguntar y con que texto. */
     class Destino(val p: Proveedor, val texto: String, val global: Boolean)
@@ -54,10 +54,12 @@ object Proveedores {
                 if (pi.packageName == c.packageName) return@mapNotNull null
                 val autoridad = pi.authority?.split(';')?.firstOrNull() ?: return@mapNotNull null
                 val meta = pi.metaData
-                val palabra = meta?.getString(META_PALABRA)?.trim().orEmpty().ifEmpty { "*" }
+                val original = meta?.getString(META_PALABRA)?.trim().orEmpty().ifEmpty { "*" }
+                // La de Ajustes → Palabras clave, si se cambio.
+                val palabra = Palabras.cambiada(c, "prov:${pi.packageName}") ?: original
                 val nombre = meta?.getString(META_NOMBRE)
                     ?: runCatching { pi.applicationInfo.loadLabel(pm).toString() }.getOrDefault(pi.packageName)
-                Proveedor(pi.packageName, autoridad, palabra, nombre)
+                Proveedor(pi.packageName, autoridad, palabra, nombre, original)
             }
         }.getOrDefault(emptyList())
         // Sus palabras son suyas: los plugins con la misma (el `p` de reserva) se apagan.

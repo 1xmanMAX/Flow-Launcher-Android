@@ -315,6 +315,8 @@ pub struct Host {
     /// Palabras clave de las que se encarga una app proveedora (PixPin con
     /// `p`): los plugins con esa palabra no se usan, para no duplicar.
     cedidas: RwLock<Vec<String>>,
+    /// Palabras clave cambiadas por el usuario, por ID de plugin.
+    palabras: RwLock<std::collections::HashMap<String, Vec<String>>>,
 }
 
 /// A que plugins va una consulta y con que.
@@ -344,7 +346,11 @@ impl Host {
     }
 
     pub fn cargar(&self, dir: &Path) -> Result<(), String> {
-        let m = Manifiesto::leer(dir)?;
+        let mut m = Manifiesto::leer(dir)?;
+        // Las palabras clave cambiadas en Ajustes mandan sobre las del plugin.json.
+        if let Some(p) = self.palabras.read().ok().and_then(|o| o.get(&m.id).cloned()) {
+            m.palabras = p;
+        }
         let exe = m.ruta_ejecutable(self.dir_libs.as_deref());
         // Como Flow: la carpeta de ajustes lleva el nombre del plugin.
         let nombre: String = m.nombre.chars().filter(|c| c.is_alphanumeric() || " -_.".contains(*c)).collect();
@@ -407,6 +413,21 @@ impl Host {
                 .collect();
         }
         d
+    }
+
+    /// Cambiar las palabras clave de un plugin (vacio: las de su plugin.json). Se vuelve a
+    /// cargar con ellas.
+    pub fn cambiar_palabras(&self, id: &str, palabras: Vec<String>) -> Result<(), String> {
+        let palabras: Vec<String> = palabras.into_iter().map(|p| p.trim().to_string()).filter(|p| !p.is_empty() && !p.contains(char::is_whitespace)).collect();
+        if let Ok(mut o) = self.palabras.write() {
+            if palabras.is_empty() {
+                o.remove(id);
+            } else {
+                o.insert(id.to_string(), palabras);
+            }
+        }
+        let dir = self.buscar_id(id).map(|p| p.m.dir.clone()).ok_or("no hay ese plugin")?;
+        self.cargar(&dir)
     }
 
     /// Las palabras de las que se encarga una app proveedora.
