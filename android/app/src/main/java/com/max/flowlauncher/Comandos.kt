@@ -239,7 +239,7 @@ object Comandos {
 
     /** `10m`, `10 min`, `1h30`, `1h 30m`, `90s`, `25` (minutos). Lo que sobra es la etiqueta. */
     fun duracion(t: String): Pair<Int, String>? {
-        val unidad = Regex("^(\\d+)\\s*(horas?|h|minutos?|min|m|segundos?|seg|s)\\b?", RegexOption.IGNORE_CASE)
+        val unidad = Regex("^(\\d+)\\s*(horas?|h|minutos?|min|m|segundos?|seg|s)(?![a-z])", RegexOption.IGNORE_CASE)
         var resto = t.trim()
         var total = 0
         var algo = false

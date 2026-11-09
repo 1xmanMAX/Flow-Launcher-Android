@@ -207,12 +207,13 @@ class BuscarActivity : Activity() {
         mostrarLocales?.let { App.principal.removeCallbacks(it) }
         verCargando?.let { App.principal.removeCallbacks(it) }
         // `wa ana hola`, `timer 10m`...: un comando manda solo, y al instante.
-        Comandos.consulta(this, q)?.let { cmd ->
+        // Un fallo en un comando no puede cerrar el buscador: sin comando y ya.
+        runCatching { Comandos.consulta(this, q) }.getOrNull()?.let { cmd ->
             cargando.visibility = View.INVISIBLE
             mostrar(cmd)
             return
         }
-        Comandos.sugerencias(this, q).takeIf { it.isNotEmpty() }?.let { s ->
+        runCatching { Comandos.sugerencias(this, q) }.getOrNull()?.takeIf { it.isNotEmpty() }?.let { s ->
             locales = (locales + s).sortedByDescending { it.puntos }
         }
         val proveedores = Proveedores.destinos(q).takeIf { it.isNotEmpty() }
