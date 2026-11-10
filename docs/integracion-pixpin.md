@@ -76,6 +76,39 @@ el buscador no necesita cambios:
    (`android.resource://com.forge.pixpin/drawable/<nombre>`), `accion`
    `pindesk://atajo/compartir/<id>`. Igual para fotos, audios y notas de voz.
 
+## Hecho el 10-nov-2026: «Compartir como HTML / PDF / JPG» (contrato v3)
+
+Mantener pulsado un documento en el buscador saca, debajo de «Compartir»,
+**«Compartir como HTML»**, **«… como PDF»** y **«… como JPG»**, igual que la hoja
+de compartir de PinDesk pero de un toque. Solo desde el buscador: PinDesk no
+pone nada en la hoja de compartir del sistema.
+
+- **Archivos de PinDesk** (`p tesis` → «Tesis final.pdf»): las tres filas
+  vienen en el menú del proveedor (`/menu`), con `accion` =
+  `call:compartir_como` y `extras` = `{"codigo": "<id del mensaje>", "formato": "pdf"}`.
+  El buscador no cambia nada para esto.
+- **Archivos del móvil** (`c tesis` → «Tesis.docx»): el buscador pregunta a
+  PinDesk `query content://com.forge.pixpin.flow/archivo` con `[nombre, mime]`
+  (contrato v3, [proveedores.md](proveedores.md) §5) y pone sus filas debajo
+  de «Compartir». Al elegir una, da a PinDesk permiso de leer el `content://`
+  del archivo y llama a `call("compartir_como", {formato, uri, nombre, mime})`.
+- **Qué tipos**: los decide PinDesk (no están escritos en el buscador): PDF,
+  Word, EPUB, HTML/SVG, Excel/CSV/ODS, DWG/DXF, cronogramas (.mpp, .xer, .bc3),
+  imágenes, Markdown y texto salen en los tres; PowerPoint, solo si PinDesk
+  tiene la maquetación de Office; vídeos, modelos 3D y lo demás, en ninguno.
+  En la edición restringida de PinDesk, solo si el catálogo abre `flow` y
+  `exportar`.
+- **Qué pasa al tocar**: PinDesk comprueba que quien llama es el buscador,
+  apunta el pedido con un **boleto de un solo uso** (caduca en 2 minutos) y
+  contesta `abrir` = `pindesk://atajo/compartir_como?boleto=<boleto>`. El
+  buscador lo abre y se cierra; encima de todo sale la barra de PinDesk con
+  tres pasos (**Enviado a PinDesk → Procesando → Listo**) y «Cancelar», y al
+  acabar la hoja de compartir de Android con el resultado. La pantalla de la
+  barra no está exportada: sin boleto vivo, la seña no hace nada.
+- **JPG de varias hojas**: una imagen por hoja (hasta 50, todas juntas);
+  una sola imagen larga solo si cabe en el doble de su ancho (dos o tres
+  diapositivas).
+
 ## Lo que ya estaba (rama `claude/proveedor-flow-buscador` de PIXPIN_PRO_ANDROID)
 
 | PC | Android |

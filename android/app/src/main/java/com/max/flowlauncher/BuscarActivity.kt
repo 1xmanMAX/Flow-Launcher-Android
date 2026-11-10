@@ -325,12 +325,24 @@ class BuscarActivity : Activity() {
     private fun pulsacionLarga(r: Resultado) {
         // Un archivo del movil: compartir, abrir con, su carpeta, copiar.
         if (r.accion.startsWith("archivo:")) {
-            ++turno
-            mostrar(MenuDeArchivo.de(r.accion.removePrefix("archivo:"), Acciones.hayPinDesk(this)))
+            val mio = ++turno
+            val ruta = r.accion.removePrefix("archivo:")
+            val pinDesk = Acciones.hayPinDesk(this)
+            // Lo que ofrecen las apps para este archivo («Compartir como PDF» de PinDesk), preguntado de fondo y
+            // con poco tiempo: el menu sale entero de una vez, sin filas que aparezcan bajo el dedo.
+            cargando.visibility = View.VISIBLE
+            hiloPlugins.execute {
+                val deApps = runCatching { Proveedores.deArchivo(applicationContext, ruta) }.getOrDefault(emptyList())
+                App.principal.post {
+                    if (cerrada || mio != turno) return@post
+                    cargando.visibility = View.INVISIBLE
+                    mostrar(MenuDeArchivo.de(ruta, pinDesk, deApps))
+                }
+            }
             return
         }
-        // El menu de una fila de una app proveedora.
-        if (r.fuente.startsWith("proveedor:") && r.contexto != null) {
+        // El menu de una fila de una app proveedora (las de un archivo no tienen menu propio).
+        if (r.fuente.startsWith("proveedor:") && r.contexto != null && !MenuDeArchivo.esDeArchivo(r)) {
             val mio = ++turno
             hiloPlugins.execute {
                 val menu = Proveedores.menu(applicationContext, r)

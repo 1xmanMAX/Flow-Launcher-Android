@@ -5,8 +5,9 @@ buscador sin plugins: declara un `ContentProvider` y el buscador le pregunta
 mientras se escribe, y le pide que haga las cosas sin abrirse. Es lo que hace
 PixPin con `p …`.
 
-Versión del contrato: **2** (la 1 solo tenía `titulo`, `subtitulo`, `icono`,
-`puntos`, `accion`, `copiar`; sigue valiendo).
+Versión del contrato: **3** (10-nov-2026). La 3 solo añade `/archivo` (ver 5);
+la 2 sigue valiendo entera, y la 1 solo tenía `titulo`, `subtitulo`, `icono`,
+`puntos`, `accion`, `copiar`.
 
 ## 1. Declararlo
 
@@ -21,6 +22,8 @@ Versión del contrato: **2** (la 1 solo tenía `titulo`, `subtitulo`, `icono`,
     <!-- Palabra clave: «p tesis» solo pregunta aquí. "*" = en todas las consultas. -->
     <meta-data android:name="com.max.flowlauncher.palabra" android:value="p" />
     <meta-data android:name="com.max.flowlauncher.nombre" android:value="PixPin" />
+    <!-- Opcional: la versión del contrato. Con 3, el buscador también pregunta por los archivos (ver 5). -->
+    <meta-data android:name="com.max.flowlauncher.contrato" android:value="3" />
 </provider>
 ```
 
@@ -91,7 +94,40 @@ contentResolver.query(Uri.parse("content://<authorities>/menu"), null, null, arr
 y enseña esas filas (mismas columnas) en lugar de los resultados: copiar,
 abrir la carpeta, quitar la tarea, mover a otra lista…
 
-## 5. Seguridad
+## 5. Acciones para un archivo del móvil (v3)
+
+Al mantener pulsado un archivo del móvil (`c tesis` → «Tesis.docx»), el
+buscador pregunta, **solo a los proveedores que declaran el contrato 3**:
+
+```kotlin
+contentResolver.query(Uri.parse("content://<authorities>/archivo"), null, null, arrayOf(nombre, mime), null)
+```
+
+- `selectionArgs[0]`: el nombre del archivo (`Tesis.docx`); `[1]`: su tipo MIME
+  si se sabe, o vacío.
+- Contestar en **< 800 ms** y sin leer el archivo: solo por su nombre y tipo.
+  Sin nada que ofrecer, cero filas.
+- Las filas (mismas columnas) salen en el menú justo debajo de «Compartir».
+
+Al elegir una fila con `accion` = `call:<metodo>`, el buscador **le pasa el
+archivo**: antes de llamar da a tu paquete permiso de lectura de su
+`content://` (`grantUriPermission`, solo lectura, se retira a los 10 minutos) y
+añade a `extras`:
+
+| Clave | Qué es |
+|---|---|
+| `uri` | `content://com.max.flowlauncher.archivos/<ruta>` (con `OpenableColumns` `DISPLAY_NAME` y `SIZE`) |
+| `nombre` | el nombre del archivo |
+| `mime` | su tipo, o vacío |
+
+La respuesta es la de siempre (3): con `abrir`, el buscador abre esa URI y se
+cierra. Así PinDesk ofrece **«Compartir como HTML / PDF / JPG»** (ver
+[integracion-pixpin.md](integracion-pixpin.md)).
+
+Un proveedor de la v2 no recibe nunca `/archivo`; un buscador de la v2 no lo
+pregunta: los dos lados siguen funcionando con el otro de antes.
+
+## 6. Seguridad
 
 El buscador es el paquete **`com.max.flowlauncher`**. Si tus datos son
 privados, contesta solo a él:

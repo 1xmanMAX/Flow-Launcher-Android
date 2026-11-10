@@ -25,6 +25,12 @@ object Proveedores {
     const val ACCION = "com.max.flowlauncher.PROVEEDOR"
     private const val META_PALABRA = "com.max.flowlauncher.palabra"
     private const val META_NOMBRE = "com.max.flowlauncher.nombre"
+    /** La version del contrato que sigue (v3: contesta a `/archivo`). Sin ella, la 2. */
+    private const val META_CONTRATO = "com.max.flowlauncher.contrato"
+    /** Lo que se espera a las filas de un archivo (mantener pulsado: se ve el menu en cuanto llegan). */
+    private const val ESPERA_ARCHIVO_MS = 800L
+    /** Lo que dura el permiso de leer un archivo que se le pasa a un proveedor: lo que tarda en copiarlo. */
+    private const val PERMISO_MS = 10 * 60 * 1000L
     /** Cuanto se espera a cada proveedor al buscar. */
     private const val ESPERA_MS = 400L
     /** Y a un menu (se pidio a proposito: puede tardar un poco mas). */
@@ -34,7 +40,7 @@ object Proveedores {
     /** Las acciones `call:` llevan en `accion` esto, la autoridad y el metodo. */
     const val LLAMAR = "llamar:"
 
-    class Proveedor(val paquete: String, val autoridad: String, val palabra: String, val nombre: String, val palabraOriginal: String = palabra)
+    class Proveedor(val paquete: String, val autoridad: String, val palabra: String, val nombre: String, val palabraOriginal: String = palabra, val contrato: Int = 2)
 
     /** A quien preguntar y con que texto. */
     class Destino(val p: Proveedor, val texto: String, val global: Boolean)
@@ -59,7 +65,7 @@ object Proveedores {
                 val palabra = Palabras.cambiada(c, "prov:${pi.packageName}") ?: original
                 val nombre = meta?.getString(META_NOMBRE)
                     ?: runCatching { pi.applicationInfo.loadLabel(pm).toString() }.getOrDefault(pi.packageName)
-                Proveedor(pi.packageName, autoridad, palabra, nombre, original)
+                Proveedor(pi.packageName, autoridad, palabra, nombre, original, MenuDeArchivo.contrato(meta?.get(META_CONTRATO)))
             }
         }.getOrDefault(emptyList())
         // Sus palabras son suyas: los plugins con la misma (el `p` de reserva) se apagan.
@@ -114,6 +120,34 @@ object Proveedores {
         val dato = r.contexto ?: return emptyList()
         val cancelar = CancellationSignal()
         return esperar(listOf(cancelar to hilos.submitOrNull { leer(c, p, "menu", dato, false, cancelar) }), ESPERA_MENU_MS)
+    }
+
+    /**
+     * **Lo que ofrecen los proveedores para un archivo del movil** (contrato v3, 10-nov-2026): `query /archivo`
+     * con `[nombre, mime]`, solo a los que declaran la v3. PinDesk contesta «Compartir como HTML / PDF / JPG»
+     * para lo que sabe pasar. Cada fila sale marcada con la ruta ([MenuDeArchivo.paraArchivo]): al elegirla,
+     * [llamar] le pasa el archivo. En un hilo de fondo.
+     */
+    fun deArchivo(c: Context, ruta: String): List<Resultado> {
+        val con = lista.filter { MenuDeArchivo.preguntaPorArchivos(it.contrato) }
+        if (con.isEmpty() || ruta.endsWith("/")) return emptyList()
+        val nombre = ruta.substringAfterLast('/')
+        val mime = ProveedorDeArchivos.tipo(nombre).orEmpty()
+        val tareas = con.map { p ->
+            val cancelar = CancellationSignal()
+            cancelar to hilos.submitOrNull {
+                val cur = runCatching {
+                    c.contentResolver.query(Uri.parse("content://${p.autoridad}/archivo"), null, null, arrayOf(nombre, mime), null, cancelar)
+                }.getOrNull() ?: return@submitOrNull emptyList()
+                val r = ArrayList<Resultado>()
+                cur.use { k ->
+                    val col = Columnas(k)
+                    while (k.moveToNext() && r.size < MAX_FILAS) fila(k, col, p, false)?.let { r += MenuDeArchivo.paraArchivo(it, ruta) }
+                }
+                r
+            }
+        }
+        return esperar(tareas, ESPERA_ARCHIVO_MS)
     }
 
     private fun esperar(tareas: List<Pair<CancellationSignal, Future<List<Resultado>>?>>, ms: Long): List<Resultado> {
@@ -201,6 +235,21 @@ object Proveedores {
         val metodo = resto.substringAfterLast(':')
         val p = porAutoridad(autoridad)
         val extras = Bundle()
+        // Una fila de un archivo del movil: se le pasa el archivo a quien la dio, con permiso de leerlo.
+        MenuDeArchivo.rutaDe(r)?.let { ruta ->
+            if (p == null) return Respuesta(null, "La app ya no está", false, null, null)
+            val f = java.io.File(ruta)
+            if (!f.isFile) return Respuesta(null, "Ya no está: ${f.name}", false, null, null)
+            val uri = ProveedorDeArchivos.uri(c, f)
+            runCatching { c.grantUriPermission(p.paquete, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }.onFailure {
+                return Respuesta(null, "Android no deja pasarle el archivo a ${p.nombre}", false, null, null)
+            }
+            // El permiso, lo justo: lo que tarda en copiarlo.
+            App.principal.postDelayed({ runCatching { c.revokeUriPermission(p.paquete, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) } }, PERMISO_MS)
+            extras.putString("uri", uri.toString())
+            extras.putString("nombre", f.name)
+            extras.putString("mime", ProveedorDeArchivos.tipo(f.name).orEmpty())
+        }
         runCatching {
             val o = JSONObject(r.accionPlugin ?: "{}")
             for (k in o.keys()) {
