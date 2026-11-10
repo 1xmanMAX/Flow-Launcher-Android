@@ -726,6 +726,9 @@ mod pruebas {
     fn lo_reciente_desempata() {
         let raiz = temporal("desempate");
         con_fecha(&raiz, "x/informe.doc", 900);
+        // La fecha de un archivo es la más nueva entre la de modificación y la de llegada (ctime), y las dos se
+        // acaban de crear: «y» tiene que llegar de verdad después (las fechas van por segundos).
+        std::thread::sleep(Duration::from_millis(1100));
         con_fecha(&raiz, "y/informe.doc", 0);
         let r = construir(&raiz, LIMITE).buscar("informe", 5, segundos(SystemTime::now()));
         assert!(r[0].accion.contains("/y/"), "{:?}", r[0].accion);
