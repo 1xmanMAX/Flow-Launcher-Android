@@ -74,9 +74,8 @@ class BuscarActivity : Activity() {
     /** Escuchando por voz: el reconocedor tapa la ventana, y no por eso se cierra. */
     private var escuchandoVoz = false
     private var modosCargados = false
-    /** Lo de la caja es la busqueda de la vez anterior, aun sin tocar (ver [recibirIntent]). */
-    private var recordado = false
-    private var sustituyendoLoRecordado = false
+    /** Lo de la caja es la busqueda de la vez anterior, aun sin tocar (ver [recibirIntent]): lo que se recordo. */
+    private var recordado: String? = null
 
     /** **Lo que se busca de verdad**: la palabra de la etiqueta y lo escrito (`c tesis`). */
     private fun consultaEntera(): String = modo?.let { "${it.palabra} ${consulta.text}" } ?: consulta.text.toString()
@@ -123,20 +122,18 @@ class BuscarActivity : Activity() {
         findViewById<View>(R.id.panel).setOnClickListener { /* no cerrar */ }
 
         consulta.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {
-                // Lo recordado de la vez anterior sale entero seleccionado: escribir encima lo sustituye todo,
-                // etiqueta incluida («c informe» y se escribe «tx hola»: es «tx hola», no «c tx hola»).
-                sustituyendoLoRecordado = recordado && (s?.length ?: 0) > 0 &&
-                    consulta.selectionStart == 0 && consulta.selectionEnd == (s?.length ?: 0)
-            }
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 if (cambiandoTexto) return
-                if (recordado) {
-                    recordado = false
-                    if (sustituyendoLoRecordado) quitarModo(buscarYa = false)
-                }
                 val t = s?.toString() ?: ""
+                // **Lo recordado de la vez anterior sale entero seleccionado: escribir encima lo sustituye todo,
+                // etiqueta incluida** («c informe» y se escribe «tx hola»: es «tx hola», no «c tx hola»). Si lo
+                // nuevo ni sigue a lo recordado ni es un trozo suyo (borrar letras), es que se escribio encima.
+                recordado?.let { r ->
+                    recordado = null
+                    if (!r.startsWith(t) && !t.startsWith(r)) quitarModo(buscarYa = false)
+                }
                 // `c ` o `g `: la palabra clave pasa a ser la etiqueta.
                 if (modo == null) Modos.partir(t)?.let { (m, resto) -> ponerModo(m, resto); return }
                 buscar(consultaEntera())
@@ -301,7 +298,7 @@ class BuscarActivity : Activity() {
         cambiarConsulta(antes)
         if (antes.isNotEmpty()) {
             consulta.selectAll()
-            recordado = true
+            recordado = consulta.text.toString()
         }
     }
 
