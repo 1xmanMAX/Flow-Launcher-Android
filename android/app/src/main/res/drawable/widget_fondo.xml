@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La barra del widget: una pastilla, como la del buscador de Google. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="@color/widget_fondo" />
+    <corners android:radius="28dp" />
+</shape>

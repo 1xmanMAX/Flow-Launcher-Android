@@ -139,7 +139,11 @@ impl Indice {
         let q = normalizar::texto(consulta.trim());
         let qs: String = q.iter().collect();
         if q.is_empty() {
-            return self.mas_usados(max, historial);
+            // **Con la caja vacia, las ultimas apps abiertas** (21-nov-2026, el usuario: «al darle clic al
+            // buscador, que aparezcan desde el principio las ultimas aplicaciones que abrimos»): por la
+            // ultima vez, no por cuantas veces. Sin ninguna abierta aun, lo mas usado de antes.
+            let r = self.apps_recientes(max.min(MAX_RECIENTES), historial);
+            return if r.is_empty() { self.mas_usados(max, historial) } else { r };
         }
         let mut r: Vec<Resultado> = Vec::new();
         let mq = mascara(&q);
@@ -162,6 +166,20 @@ impl Indice {
         r
     }
 
+    fn apps_recientes(&self, max: usize, historial: &Historial) -> Vec<Resultado> {
+        let mut r = Vec::new();
+        for accion in historial.recientes() {
+            if let Some(e) = self.elementos.iter().find(|e| e.tipo == Tipo::App && e.accion == accion) {
+                // Puntos que bajan: el orden es el de la ultima vez (nadie lo reordena despues).
+                r.push(e.resultado(10_000 - r.len() as i32, Vec::new()));
+            }
+            if r.len() >= max {
+                break;
+            }
+        }
+        r
+    }
+
     fn mas_usados(&self, max: usize, historial: &Historial) -> Vec<Resultado> {
         let mut r = Vec::new();
         for (accion, puntos) in historial.mas_usadas(max * 2) {
@@ -175,6 +193,9 @@ impl Indice {
         r
     }
 }
+
+/// Cuantas apps recientes salen con la caja vacia.
+pub const MAX_RECIENTES: usize = 8;
 
 #[cfg(test)]
 mod pruebas {
@@ -195,6 +216,24 @@ mod pruebas {
             vec![Elemento::nuevo(Tipo::Ajuste, "Wi-Fi", "Ajustes", "intent:wifi", "", "red internet inalambrica")],
         );
         i
+    }
+
+    #[test]
+    fn caja_vacia_las_ultimas_apps_abiertas() {
+        let mut h = Historial::default();
+        let i = indice();
+        // La camara muchas veces, hace rato; WhatsApp una vez, ahora: WhatsApp primero.
+        for _ in 0..5 {
+            h.registrar("ca", "app:cam");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        h.registrar("", "app:calc");
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        h.registrar("wh", "app:wsp");
+        let r = i.buscar("", 20, &h);
+        assert_eq!(r.iter().map(|x| x.accion.as_str()).collect::<Vec<_>>(), ["app:wsp", "app:calc", "app:cam"]);
+        // Sin nada abierto aun: nada (no se inventa).
+        assert!(i.buscar("", 20, &Historial::default()).is_empty());
     }
 
     #[test]

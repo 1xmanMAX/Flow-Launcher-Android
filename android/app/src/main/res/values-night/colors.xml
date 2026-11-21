@@ -3,4 +3,9 @@
     <color name="acento">#6EA0FF</color>
     <color name="panel">#FF1F2125</color>
     <color name="fila_pulsada">#226EA0FF</color>
+    <color name="widget_fondo">#EB303134</color>
+    <color name="widget_texto">#BDC1C6</color>
+    <color name="widget_icono">#E8EAED</color>
+    <color name="widget_atajo">#D9303134</color>
+    <color name="chip_fondo">#336EA0FF</color>
 </resources>

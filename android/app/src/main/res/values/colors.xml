@@ -4,4 +4,9 @@
     <color name="panel">#FFFFFFFF</color>
     <color name="fila_pulsada">#142F6FEB</color>
     <color name="icono_fondo">#2F6FEB</color>
+    <color name="widget_fondo">#F5FFFFFF</color>
+    <color name="widget_texto">#5F6368</color>
+    <color name="widget_icono">#3C4043</color>
+    <color name="widget_atajo">#E6FFFFFF</color>
+    <color name="chip_fondo">#1A2F6FEB</color>
 </resources>

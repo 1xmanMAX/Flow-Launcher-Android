@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- El widget con atajos: la barra y, debajo, lo que mas se usa de Android. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:gravity="center_vertical"
+    android:orientation="vertical"
+    android:padding="4dp">
+
+    <LinearLayout
+        android:id="@+id/w_barra"
+        android:layout_width="match_parent"
+        android:layout_height="52dp"
+        android:background="@drawable/widget_fondo"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="6dp">
+
+        <ImageView
+            android:layout_width="24dp"
+            android:layout_height="24dp"
+            android:contentDescription="@string/buscar"
+            android:src="@drawable/ic_google" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:singleLine="true"
+            android:text="@string/widget_pista"
+            android:textColor="@color/widget_texto"
+            android:textSize="16sp" />
+
+        <ImageView
+            android:id="@+id/w_voz"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:contentDescription="@string/widget_voz"
+            android:padding="8dp"
+            android:src="@drawable/w_mic" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:orientation="horizontal">
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_google"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_google"
+                android:padding="9dp"
+                android:src="@drawable/ic_google" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_archivos"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_archivos"
+                android:padding="9dp"
+                android:src="@drawable/w_carpeta" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_wifi"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_wifi"
+                android:padding="9dp"
+                android:src="@drawable/w_wifi" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_bluetooth"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_bluetooth"
+                android:padding="9dp"
+                android:src="@drawable/w_bluetooth" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_linterna"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_linterna"
+                android:padding="9dp"
+                android:src="@drawable/w_linterna" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_camara"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_camara"
+                android:padding="9dp"
+                android:src="@drawable/w_camara" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_alarma"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_alarma"
+                android:padding="9dp"
+                android:src="@drawable/w_alarma" />
+        </FrameLayout>
+
+        <FrameLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1">
+
+            <ImageView
+                android:id="@+id/w_a_ajustes"
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:layout_gravity="center"
+                android:background="@drawable/widget_atajo"
+                android:contentDescription="@string/widget_a_ajustes"
+                android:padding="9dp"
+                android:src="@drawable/w_ajustes" />
+        </FrameLayout>
+
+    </LinearLayout>
+</LinearLayout>

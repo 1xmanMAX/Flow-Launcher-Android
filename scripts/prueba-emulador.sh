@@ -106,6 +106,15 @@ espera main "Flow Buscador"
 for _ in 1 2 3; do "$adb" shell input swipe 500 1600 500 300 200; done; sleep 2
 volcar main-abajo; espera main-abajo "Listo"
 
+paso "El widget del buscador"
+"$adb" shell dumpsys appwidget > "$salida/appwidget.txt" 2>&1 || true
+grep -q "$pkg/.Widget" "$salida/appwidget.txt" && echo "OK  widget: registrado" || falla "widget: no esta registrado"
+grep -q "$pkg/.WidgetConAtajos" "$salida/appwidget.txt" && echo "OK  widget con atajos: registrado" || falla "widget con atajos: no esta registrado"
+# Lo que hace el atajo «Buscar archivos» del widget: el buscador vacio con la etiqueta puesta.
+"$adb" shell am start -W -n $pkg/.BuscarActivity --ez nuevo true --es modo archivos >/dev/null; sleep 4
+volcar widget-archivos; espera widget-archivos "Archivos"
+"$adb" shell input keyevent KEYCODE_BACK; sleep 1
+
 paso "BuscarActivity (arranque en frio) y consultas"
 "$adb" shell am force-stop $pkg
 "$adb" shell am start -W -n $pkg/.BuscarActivity | tee "$salida/start-buscar.txt"
@@ -119,6 +128,9 @@ consulta() {  # $1 = nombre, $2 = texto (espacios como %s), $3 = resultado esper
 consulta buscar-set "set" "Ajustes del sistema"
 consulta buscar-calc "2+2" "2+2 — toca para copiar"
 consulta buscar-tx "tx%shola" "HOLA"
+# «g »: la etiqueta de Google y su busqueda (las sugerencias dependen de la red: no se exigen).
+consulta buscar-google "g%sgatos" "Buscar «gatos» en Google"
+espera buscar-google "Google"
 # Comandos con otras apps (sin plugins).
 consulta cmd-timer "timer%s10m" "Temporizador de 10 min"
 consulta cmd-wa "wa%s987654321%shola" "Chat de WhatsApp con 987654321"
@@ -128,6 +140,8 @@ consulta cmd-sugerir "tim" "Temporizador  ·  timer"
 consulta buscar-js "cv%s10%skm%sa%smi" "6.213712"
 consulta buscar-pixpin "p%st%scomprar%span" "Apuntar «comprar pan» como tarea"
 consulta buscar-archivos "c%stesis" "Tesis final.pdf"
+# La «c » pasa a ser la etiqueta con la carpeta («Archivos»), y en la caja queda solo «tesis».
+espera buscar-archivos "Archivos"; no_espera buscar-archivos "c tesis"
 # Mantener pulsado el archivo: el menu con «Compartir», y compartir abre la lista de apps.
 tocar buscar-archivos "Tesis final.pdf" largo; volcar menu-archivo
 espera menu-archivo "Compartir"; espera menu-archivo "Copiar la ruta"

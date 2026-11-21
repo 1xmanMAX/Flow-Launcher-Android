@@ -33,6 +33,39 @@
                 android:src="@drawable/ic_buscar"
                 android:tint="?android:attr/textColorSecondary" />
 
+            <!-- La etiqueta del modo («Archivos», «Google»...): ver Modos.kt. Tocarla la quita. -->
+            <LinearLayout
+                android:id="@+id/chip"
+                android:layout_width="wrap_content"
+                android:layout_height="30dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/chip"
+                android:gravity="center_vertical"
+                android:orientation="horizontal"
+                android:paddingStart="6dp"
+                android:paddingEnd="10dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/chip_icono"
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:importantForAccessibility="no"
+                    android:scaleType="fitCenter" />
+
+                <TextView
+                    android:id="@+id/chip_texto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:maxWidth="120dp"
+                    android:singleLine="true"
+                    android:ellipsize="end"
+                    android:textColor="@color/acento"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
+
             <EditText
                 android:id="@+id/consulta"
                 android:layout_width="0dp"

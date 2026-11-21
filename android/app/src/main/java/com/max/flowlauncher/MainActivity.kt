@@ -59,6 +59,13 @@ class MainActivity : Activity() {
         boton(getString(R.string.abrir_buscador)) { BurbujaService.abrirBuscador(this) }
 
         seccion("Acceso rápido")
+        // **El widget del buscador** (21-nov-2026): la forma principal de buscar, en la pantalla de inicio.
+        texto(
+            "El widget: una barra de búsqueda en la pantalla principal (como la de Google), y otro con atajos a Google, " +
+                "archivos, Wi‑Fi, Bluetooth, linterna, cámara, alarmas y ajustes. Tócalo y escribe.",
+        )
+        boton("Poner el buscador en la pantalla principal") { ponerWidget(conAtajos = false) }
+        boton("Poner el buscador con atajos") { ponerWidget(conAtajos = true) }
         burbuja = interruptor("Burbuja flotante", "Un círculo sobre las demás apps; tócalo para buscar.") { activa ->
             if (activa && !BurbujaService.puede(this)) {
                 Toast.makeText(this, "Permite «Mostrar sobre otras apps» y vuelve", Toast.LENGTH_LONG).show()
@@ -117,6 +124,11 @@ class MainActivity : Activity() {
                 "Puedes traer las tuyas de Flow Launcher: el fichero Settings.json de " +
                 "%APPDATA%\\FlowLauncher\\Settings\\Plugins\\Flow.Launcher.Plugin.WebSearch\\",
         )
+        interruptor(
+            "Sugerencias de Google",
+            "Mientras escribes, unas pocas búsquedas de Google al final (con «g » salen todas). Lo escrito se manda a Google " +
+                "para sugerirlo; nunca lo que buscas en archivos, contactos, plugins o apps.",
+        ) { SugerenciasGoogle.cambiarEnTodas(this, it) }.isChecked = SugerenciasGoogle.enTodas(this)
         boton("Importar Settings.json de Flow") {
             try {
                 startActivityForResult(
@@ -152,6 +164,17 @@ class MainActivity : Activity() {
                     pintarPalabras(e)
                 }
             }
+        }
+    }
+
+    /** El lanzador pregunta dónde ponerlo; si no sabe, se explica a mano. */
+    private fun ponerWidget(conAtajos: Boolean) {
+        if (!Widget.pedir(this, conAtajos)) {
+            Toast.makeText(
+                this,
+                "Mantén pulsada la pantalla principal → Widgets → Flow Buscador → «${getString(if (conAtajos) R.string.widget_nombre_atajos else R.string.widget_nombre)}»",
+                Toast.LENGTH_LONG,
+            ).show()
         }
     }
 

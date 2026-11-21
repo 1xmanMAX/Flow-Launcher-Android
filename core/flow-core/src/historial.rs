@@ -107,6 +107,14 @@ impl Historial {
         }
     }
 
+    /// Las acciones por la ultima vez que se eligieron, la mas reciente primero (con la caja
+    /// vacia salen las ultimas apps abiertas, ver [`crate::indice::Indice::buscar`]).
+    pub fn recientes(&self) -> Vec<&str> {
+        let mut v: Vec<(&str, u64)> = self.usos.iter().map(|(a, (_, u))| (a.as_str(), *u)).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+        v.into_iter().map(|x| x.0).collect()
+    }
+
     /// Las acciones mas usadas, para cuando no hay nada escrito.
     pub fn mas_usadas(&self, max: usize) -> Vec<(&str, i32)> {
         let mut v: Vec<(&str, i32)> = self

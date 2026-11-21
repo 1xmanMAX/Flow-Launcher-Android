@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Solo para las sugerencias de Google (SugerenciasGoogle.kt): lo demas no sale del movil. -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- La burbuja flotante, sobre las demas apps. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -51,6 +53,7 @@
         <package android:name="com.spotify.music" />
         <package android:name="com.google.android.apps.maps" />
         <intent><action android:name="android.intent.action.SET_TIMER" /></intent>
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH" /></intent>
         <intent><action android:name="android.intent.action.SET_ALARM" /></intent>
         <intent>
             <action android:name="android.intent.action.INSERT" />
@@ -160,6 +163,34 @@
             android:authorities="${applicationId}.archivos"
             android:exported="false"
             android:grantUriPermissions="true" />
+
+        <!-- El widget del buscador (Widget.kt): la barra sola, y con atajos. -->
+        <receiver
+            android:name=".Widget"
+            android:exported="true"
+            android:label="@string/widget_nombre">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_buscador" />
+        </receiver>
+        <receiver
+            android:name=".WidgetConAtajos"
+            android:exported="true"
+            android:label="@string/widget_nombre_atajos">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_buscador_atajos" />
+        </receiver>
+        <!-- Lo que hace un atajo del widget sin abrir nada (la linterna). -->
+        <receiver
+            android:name=".Atajos"
+            android:exported="false" />
 
         <receiver
             android:name=".AlArrancar"

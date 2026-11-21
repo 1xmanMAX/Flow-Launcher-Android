@@ -9,4 +9,18 @@
     <string name="toca_para_buscar">Toca para buscar</string>
     <string name="abrir_buscador">Abrir el buscador</string>
     <string name="intro">Buscador universal al estilo Flow Launcher: apps, contactos, ajustes, calculadora, búsquedas web y plugins compatibles con el protocolo de Flow.</string>
+    <string name="widget_nombre">Buscador</string>
+    <string name="widget_nombre_atajos">Buscador con atajos</string>
+    <string name="widget_desc">Busca apps, archivos, contactos y en Google desde la pantalla principal.</string>
+    <string name="widget_desc_atajos">El buscador y, debajo, atajos a Google, archivos, Wi‑Fi, Bluetooth, linterna, cámara, alarmas y ajustes.</string>
+    <string name="widget_pista">Buscar apps, archivos y en Google</string>
+    <string name="widget_voz">Buscar por voz</string>
+    <string name="widget_a_google">Buscar en Google</string>
+    <string name="widget_a_archivos">Buscar archivos</string>
+    <string name="widget_a_wifi">Wi‑Fi</string>
+    <string name="widget_a_bluetooth">Bluetooth</string>
+    <string name="widget_a_linterna">Linterna</string>
+    <string name="widget_a_camara">Cámara</string>
+    <string name="widget_a_alarma">Alarmas</string>
+    <string name="widget_a_ajustes">Ajustes</string>
 </resources>

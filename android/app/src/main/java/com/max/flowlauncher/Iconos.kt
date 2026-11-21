@@ -39,6 +39,11 @@ object Iconos {
         // nada. Volver a ponerlo, o pasar por el de por defecto, parpadea.
         if (v.tag == clave && v.drawable != null) return
         v.tag = clave
+        // La G de Google, a todo color (no es una baldosa de un solo color).
+        if (clave == "res:ic_google") {
+            v.setImageResource(R.drawable.ic_google)
+            return
+        }
         // Las funciones (web, calculadora, compartir, copiar...) y los
         // archivos: baldosas cuadradas dibujadas, todas de la misma familia.
         val funcion = when {

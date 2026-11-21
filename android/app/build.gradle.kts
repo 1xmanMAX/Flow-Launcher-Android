@@ -12,8 +12,8 @@ android {
         // Android 7.0: casi cualquier movil, tambien los de gama baja y Go.
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 8
+        versionName = "0.8.0"
     }
 
     buildTypes {
@@ -60,4 +60,6 @@ kotlin {
 // (JUnit solo para las pruebas: no entra en el APK.)
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    // org.json de verdad en las pruebas (la del SDK de Android no funciona fuera del móvil).
+    testImplementation("org.json:json:20240303")
 }

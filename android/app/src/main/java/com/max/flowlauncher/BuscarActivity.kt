@@ -45,6 +45,9 @@ class BuscarActivity : Activity() {
         const val ESPERA_ANTES_DE_CARGANDO = 300L
         /** Lo mas largo que se acepta de otra app como consulta. */
         const val MAX_TEXTO = 500
+        /** Cuanto se espera, sin teclear, antes de preguntar a Google. */
+        const val ESPERA_GOOGLE = 180L
+        const val VOZ = 41
 
         /** La ultima busqueda (ver [guardarUltima]). */
         @Volatile
@@ -55,7 +58,25 @@ class BuscarActivity : Activity() {
     private lateinit var lista: ListView
     private lateinit var cargando: ProgressBar
     private lateinit var separador: View
+    private lateinit var chip: View
+    private lateinit var chipIcono: ImageView
+    private lateinit var chipTexto: TextView
     private val adaptador = Adaptador()
+
+    /** La etiqueta puesta («Archivos», «Google»...), o null: ver [Modos]. */
+    private var modo: Modos.Modo? = null
+    /** Mientras se cambia el texto a mano (al poner la etiqueta), el TextWatcher no busca. */
+    private var cambiandoTexto = false
+    /** Las sugerencias de Google de lo escrito (ver [SugerenciasGoogle]). */
+    private var deGoogle: List<Resultado> = emptyList()
+    private var pedirAGoogle: Runnable? = null
+    private val hiloGoogle = App.hilos("flow-google")
+    /** Escuchando por voz: el reconocedor tapa la ventana, y no por eso se cierra. */
+    private var escuchandoVoz = false
+    private var modosCargados = false
+
+    /** **Lo que se busca de verdad**: la palabra de la etiqueta y lo escrito (`c tesis`). */
+    private fun consultaEntera(): String = modo?.let { "${it.palabra} ${consulta.text}" } ?: consulta.text.toString()
 
     /** Sube con cada tecla: lo que llega tarde de los plugins se descarta. */
     @Volatile
@@ -82,7 +103,18 @@ class BuscarActivity : Activity() {
         lista = findViewById(R.id.lista)
         cargando = findViewById(R.id.cargando)
         separador = findViewById(R.id.separador)
+        chip = findViewById(R.id.chip)
+        chipIcono = findViewById(R.id.chip_icono)
+        chipTexto = findViewById(R.id.chip_texto)
         lista.adapter = adaptador
+        // Tocar la etiqueta la quita; borrar con la caja vacia, tambien.
+        chip.setOnClickListener { quitarModo() }
+        consulta.setOnKeyListener { _, codigo, ev ->
+            if (codigo == KeyEvent.KEYCODE_DEL && ev.action == KeyEvent.ACTION_DOWN && consulta.text.isEmpty() && modo != null) {
+                quitarModo()
+                true
+            } else false
+        }
 
         findViewById<View>(R.id.fondo).setOnClickListener { finish() }
         findViewById<View>(R.id.panel).setOnClickListener { /* no cerrar */ }
@@ -90,7 +122,13 @@ class BuscarActivity : Activity() {
         consulta.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
-            override fun afterTextChanged(s: Editable?) = buscar(s?.toString() ?: "")
+            override fun afterTextChanged(s: Editable?) {
+                if (cambiandoTexto) return
+                val t = s?.toString() ?: ""
+                // `c ` o `g `: la palabra clave pasa a ser la etiqueta.
+                if (modo == null) Modos.partir(t)?.let { (m, resto) -> ponerModo(m, resto); return }
+                buscar(consultaEntera())
+            }
         })
         consulta.setOnEditorActionListener { _, id, ev ->
             val enter = id == EditorInfo.IME_ACTION_GO ||
@@ -137,9 +175,62 @@ class BuscarActivity : Activity() {
     override fun onPause() {
         super.onPause()
         // Lo escrito se recuerda para la proxima vez (como Flow).
-        guardarUltima(consulta.text.toString())
-        // Fuera de la vista no se queda abierta.
-        if (!isChangingConfigurations) finish()
+        guardarUltima(consultaEntera())
+        // Fuera de la vista no se queda abierta (salvo mientras se escucha por voz).
+        if (!isChangingConfigurations && !escuchandoVoz) finish()
+    }
+
+    /** **Poner la etiqueta** de [m], con [resto] escrito detras. */
+    private fun ponerModo(m: Modos.Modo, resto: String) {
+        modo = m
+        chipTexto.text = m.nombre
+        chipIcono.tag = null
+        Iconos.poner(chipIcono, Modos.comoResultado(m))
+        chip.visibility = View.VISIBLE
+        consulta.hint = if (m.esGoogle) "Buscar en Google" else "Buscar en ${m.nombre}"
+        cambiandoTexto = true
+        consulta.setText(resto)
+        consulta.setSelection(resto.length)
+        cambiandoTexto = false
+        deGoogle = emptyList()
+        buscar(consultaEntera())
+    }
+
+    private fun quitarModo(buscarYa: Boolean = true) {
+        if (modo == null) return
+        modo = null
+        chip.visibility = View.GONE
+        consulta.setHint(R.string.pista)
+        deGoogle = emptyList()
+        if (buscarYa) buscar(consultaEntera())
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(codigo: Int, resultado: Int, datos: Intent?) {
+        @Suppress("DEPRECATION")
+        super.onActivityResult(codigo, resultado, datos)
+        if (codigo != VOZ) return
+        escuchandoVoz = false
+        val dicho = runCatching { datos?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull() }.getOrNull()
+        if (!dicho.isNullOrBlank()) {
+            // Dentro de la etiqueta si la hay («g» + lo dicho busca en Google).
+            if (modo != null) consulta.setText(dicho.trim()).also { consulta.setSelection(consulta.text.length) } else cambiarConsulta(dicho.trim())
+        }
+    }
+
+    /** **Buscar por voz** (el micrófono del widget): el reconocedor del teléfono, y lo dicho a la caja. */
+    private fun escucharVoz() {
+        val i = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_WEB_SEARCH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, getString(R.string.widget_voz))
+        try {
+            escuchandoVoz = true
+            @Suppress("DEPRECATION")
+            startActivityForResult(i, VOZ)
+        } catch (e: RuntimeException) {
+            escuchandoVoz = false
+            Toast.makeText(this, "Este teléfono no tiene búsqueda por voz", Toast.LENGTH_SHORT).show()
+        }
     }
 
     /** La ultima busqueda: en memoria y en disco (por si el proceso muere). */
@@ -161,10 +252,23 @@ class BuscarActivity : Activity() {
     override fun onDestroy() {
         super.onDestroy()
         hiloPlugins.shutdownNow()
+        hiloGoogle.shutdownNow()
     }
 
     private fun recibirIntent(i: Intent?) {
         if (cerrada) return
+        // Las etiquetas (palabras clave, plugins, apps): una vez por ventana, ya con el nucleo listo.
+        if (!modosCargados) {
+            modosCargados = true
+            runCatching { Modos.cargar(applicationContext) }
+        }
+        // **Desde el widget**: vacio (las ultimas apps abiertas), en un modo (archivos, Google) o escuchando.
+        if (runCatching { i?.getBooleanExtra(Widget.EXTRA_NUEVO, false) }.getOrNull() == true) {
+            val m = Modos.delWidget(this, runCatching { i?.getStringExtra(Widget.EXTRA_MODO) }.getOrNull())
+            cambiarConsulta(m?.let { "${it.palabra} " } ?: "")
+            if (runCatching { i?.getBooleanExtra(Widget.EXTRA_VOZ, false) }.getOrNull() == true) escucharVoz()
+            return
+        }
         // Los extras de otra app pueden venir rotos (BadParcelableException...).
         val texto = runCatching {
             when (i?.action) {
@@ -188,8 +292,11 @@ class BuscarActivity : Activity() {
 
     private fun cambiarConsulta(t: String) {
         if (cerrada) return
+        // Lo nuevo trae su etiqueta, si la tiene (`consulta:yt `): la de antes se quita sin buscar.
+        quitarModo(buscarYa = false)
         consulta.setText(t)
-        consulta.setSelection(t.length)
+        // Si se puso una etiqueta, el texto ya es solo lo de detras.
+        consulta.setSelection(consulta.text.length)
         // setText ya llama a buscar() por el TextWatcher.
         if (t.isEmpty()) buscar("")
     }
@@ -201,6 +308,7 @@ class BuscarActivity : Activity() {
     private fun buscar(q: String) {
         if (cerrada) return
         val mio = ++turno
+        pedirGoogle(q, mio)
         // Si el nucleo falla (no cargo, JSON raro), sin resultados pero sin cerrarse.
         val r = runCatching { JSONObject(Nucleo.consultar(q, 20)) }.getOrElse { JSONObject() }
         locales = Resultado.lista(r.optJSONArray("r"))
@@ -210,6 +318,9 @@ class BuscarActivity : Activity() {
         // Un fallo en un comando no puede cerrar el buscador: sin comando y ya.
         runCatching { Comandos.consulta(this, q) }.getOrNull()?.let { cmd ->
             cargando.visibility = View.INVISIBLE
+            // Un comando manda solo: nada de Google encima.
+            pedirAGoogle?.let { App.principal.removeCallbacks(it) }
+            deGoogle = emptyList()
             mostrar(cmd)
             return
         }
@@ -219,16 +330,18 @@ class BuscarActivity : Activity() {
         val proveedores = Proveedores.destinos(q).takeIf { it.isNotEmpty() }
         // `p tesis`: la palabra clave es de la app; lo local no pinta nada.
         if (proveedores?.any { !it.global } == true) locales = emptyList()
+        // Si Google contesta antes que los plugins, se junta con lo de esta tecla (no con lo de la anterior).
+        ultimosLocales = locales
         if (!r.optBoolean("p") && proveedores == null) {
             cargando.visibility = View.INVISIBLE
-            mostrar(locales)
+            mostrarConGoogle(locales)
             return
         }
         // Sin parpadeo: lo de antes se queda en pantalla y lo nuevo sale de
         // una vez, ya junto con lo de los plugins (casi siempre en unos ms).
         // Solo si tardan se ensena antes lo local, y el indicador de carga
         // solo si tardan de verdad.
-        mostrarLocales = Runnable { if (mio == turno && !cerrada) mostrar(locales) }.also {
+        mostrarLocales = Runnable { if (mio == turno && !cerrada) mostrarConGoogle(locales) }.also {
             App.principal.postDelayed(it, ESPERA_ANTES_DE_LO_LOCAL)
         }
         verCargando = Runnable { if (mio == turno && !cerrada) cargando.visibility = View.VISIBLE }.also {
@@ -257,9 +370,52 @@ class BuscarActivity : Activity() {
                 verCargando?.let { App.principal.removeCallbacks(it) }
                 cargando.visibility = View.INVISIBLE
                 if (ev.length() > 0 && Acciones.eventos(this, ev, ::cambiarConsulta)) finish()
-                mostrar((locales + de).sortedByDescending { it.puntos }.take(30))
+                ultimosLocales = (locales + de).sortedByDescending { it.puntos }.take(30)
+                mostrarConGoogle(ultimosLocales)
             }
         }
+    }
+
+    /** Lo ultimo de la busqueda sin Google (para juntarle las sugerencias cuando lleguen). */
+    private var ultimosLocales: List<Resultado> = emptyList()
+
+    /** Los resultados de la busqueda y, donde toca, las sugerencias de Google. */
+    private fun mostrarConGoogle(r: List<Resultado>) {
+        ultimosLocales = r
+        mostrar(if (deGoogle.isEmpty()) r else (r + deGoogle).sortedByDescending { it.puntos })
+    }
+
+    /**
+     * **Preguntar a Google** lo escrito, si toca: con la etiqueta de Google, siempre; sin etiqueta, si esta
+     * encendido en Ajustes y hay al menos 2 letras; nunca dentro de otra etiqueta (archivos, contactos, plugins...).
+     * Tras [ESPERA_GOOGLE] sin teclear; lo que llega tarde se descarta. Mientras, las de antes que aun valen siguen.
+     */
+    private fun pedirGoogle(q: String, mio: Int) {
+        pedirAGoogle?.let { App.principal.removeCallbacks(it) }
+        val m = modo
+        val enGoogle = m?.esGoogle == true
+        val texto = if (m != null) consulta.text.toString().trim() else q.trim()
+        val toca = texto.isNotEmpty() && (enGoogle || (m == null && texto.length >= 2 && SugerenciasGoogle.enTodas(this)))
+        // Las que ya hay y siguen empezando por lo escrito, se quedan (sin parpadeo).
+        deGoogle = if (!toca) emptyList() else deGoogle.filter { it.titulo.startsWith(texto, ignoreCase = true) && it.titulo.length > texto.length }
+        if (!toca) return
+        val palabra = m?.palabra ?: Modos.delWidget(this, Widget.MODO_GOOGLE)?.palabra ?: "g"
+        pedirAGoogle = Runnable {
+            if (cerrada || mio != turno) return@Runnable
+            runCatching {
+                hiloGoogle.execute {
+                    val s = runCatching { SugerenciasGoogle.de(texto) }.getOrDefault(emptyList())
+                        .filterNot { it.equals(texto, ignoreCase = true) && !enGoogle }
+                    App.principal.post {
+                        if (cerrada || mio != turno) return@post
+                        // Con la etiqueta, arriba (tras «Buscar en Google»); sin ella, al final, sobre la busqueda web.
+                        deGoogle = if (enGoogle) SugerenciasGoogle.filas(s, palabra, SugerenciasGoogle.MAX_EN_GOOGLE, 9_000)
+                        else SugerenciasGoogle.filas(s, palabra, SugerenciasGoogle.MAX_EN_TODAS, -5_000)
+                        mostrarConGoogle(ultimosLocales)
+                    }
+                }
+            }
+        }.also { App.principal.postDelayed(it, ESPERA_GOOGLE) }
     }
 
     private fun mostrar(r: List<Resultado>) {
@@ -270,7 +426,7 @@ class BuscarActivity : Activity() {
             a.titulo == b.titulo && a.subtitulo == b.subtitulo && a.icono == b.icono && a.resaltado.contentEquals(b.resaltado)
         }
         adaptador.items = r
-        adaptador.consultaActual = consulta.text.toString()
+        adaptador.consultaActual = consultaEntera()
         if (igual) return
         adaptador.notifyDataSetChanged()
         val sep = if (r.isEmpty()) View.GONE else View.VISIBLE
@@ -279,7 +435,7 @@ class BuscarActivity : Activity() {
     }
 
     private fun elegir(r: Resultado) {
-        val q = consulta.text.toString()
+        val q = consultaEntera()
         App.fondo.execute { Nucleo.registrarUso(q, r.claveHistorial) }
         val id = r.pluginId
         if (r.accion.startsWith("plugin:") && id != null) {
