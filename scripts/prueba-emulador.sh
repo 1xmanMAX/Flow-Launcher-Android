@@ -108,8 +108,8 @@ volcar main-abajo; espera main-abajo "Listo"
 
 paso "El widget del buscador"
 "$adb" shell dumpsys appwidget > "$salida/appwidget.txt" 2>&1 || true
-grep -q "$pkg/.Widget" "$salida/appwidget.txt" && echo "OK  widget: registrado" || falla "widget: no esta registrado"
-grep -q "$pkg/.WidgetConAtajos" "$salida/appwidget.txt" && echo "OK  widget con atajos: registrado" || falla "widget con atajos: no esta registrado"
+grep -qE "$pkg/(\.|$pkg\.)Widget\}" "$salida/appwidget.txt" && echo "OK  widget: registrado" || falla "widget: no esta registrado"
+grep -qE "$pkg/(\.|$pkg\.)WidgetConAtajos\}" "$salida/appwidget.txt" && echo "OK  widget con atajos: registrado" || falla "widget con atajos: no esta registrado"
 # Lo que hace el atajo «Buscar archivos» del widget: el buscador vacio con la etiqueta puesta.
 "$adb" shell am start -W -n $pkg/.BuscarActivity --ez nuevo true --es modo archivos >/dev/null; sleep 4
 volcar widget-archivos; espera widget-archivos "Archivos"
